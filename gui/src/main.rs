@@ -54,6 +54,9 @@ struct App {
     hint_address: String,
     hint_size: String,
     hint_parent: String,
+    hint_rx: Option<Receiver<Result<serde_json::Value, String>>>,
+    hint_suggestions: Option<serde_json::Value>,
+    hint_suggestions_error: String,
     check_after_job: bool,
 }
 
@@ -103,6 +106,9 @@ impl App {
             hint_address: String::new(),
             hint_size: String::new(),
             hint_parent: String::new(),
+            hint_rx: None,
+            hint_suggestions: None,
+            hint_suggestions_error: String::new(),
             check_after_job: false,
         }
     }
@@ -376,6 +382,8 @@ impl App {
                         self.hint_address.clear();
                         self.hint_size.clear();
                         self.hint_parent.clear();
+                        self.hint_suggestions = None;
+                        self.hint_suggestions_error.clear();
                     }
                     if ui.button("Open folder").clicked() {
                         open_path(path);
@@ -598,6 +606,13 @@ impl App {
                 Err(e) => self.update_error = e,
             }
         }
+        if let Some(result) = self.hint_rx.as_ref().and_then(|r| r.try_recv().ok()) {
+            self.hint_rx = None;
+            match result {
+                Ok(v) => self.hint_suggestions = Some(v),
+                Err(e) => self.hint_suggestions_error = e,
+            }
+        }
         if self.job.is_none() && self.check_after_job {
             self.check_after_job = false;
             self.tools_rx = Some(request_json(&self.settings.python, "toolchain", ctx));
@@ -724,7 +739,7 @@ impl App {
     }
 
     fn about(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Xbox360Recomp 0.3.0");
+        ui.heading("Xbox360Recomp 0.3.1");
         ui.label("SwitchRecomp by MZ Labs — original interface foundation (Apache-2.0).");
         ui.label("Xbox 360 fork additions: katakishi0 · hosting: kuaan08.");
         ui.label("ReXGlue by Tom Clay and contributors, with Xenia and XenonRecomp research.");
@@ -761,6 +776,41 @@ impl App {
                             }
                         }
                         Err(_) => { ui.label("Run Generate C++ first to create a build log."); }
+                    }
+                    ui.separator();
+                    if ui.add_enabled(self.hint_rx.is_none(), egui::Button::new("Check verified hints for this XEX")).clicked() {
+                        self.hint_suggestions = None;
+                        self.hint_suggestions_error.clear();
+                        self.hint_rx = Some(request_json_project(&self.settings.python, "suggest-hints", &root, ctx));
+                    }
+                    if self.hint_rx.is_some() { ui.spinner(); }
+                    if !self.hint_suggestions_error.is_empty() {
+                        ui.colored_label(theme::ERROR, &self.hint_suggestions_error);
+                    }
+                    if let Some(known) = self.hint_suggestions.clone() {
+                        if known["matching_revision"] == true {
+                            ui.label(format!("Exact executable match: {}", known["title"].as_str().unwrap_or("unknown")));
+                            if let Some(hints) = known["hints"].as_array() {
+                                for hint in hints {
+                                    let address = hint["address"].as_str().unwrap_or("");
+                                    let bytes = hint["size"].as_u64().unwrap_or(0);
+                                    ui.horizontal_wrapped(|ui| {
+                                        ui.monospace(format!("{address} / {bytes} bytes"));
+                                        if ui.button("Use verified hint").clicked() {
+                                            self.hint_address = address.to_string();
+                                            self.hint_size = bytes.to_string();
+                                            self.hint_parent.clear();
+                                        }
+                                    });
+                                    if let Some(evidence) = hint["evidence"].as_str() {
+                                        ui.label(evidence);
+                                    }
+                                }
+                            }
+                        } else {
+                            ui.label("No known hints for this exact XEX checksum; enter verified sizes manually.");
+                        }
+                        ui.colored_label(theme::WARNING, "Hints still require explicit Save and do not guarantee game compatibility.");
                     }
                     ui.separator();
                     ui.label("Verified entrypoint address (0xXXXXXXXX)");
@@ -955,6 +1005,33 @@ mod analysis_ui_tests {
         let log = "0x82C21240 from 0x82C22B14: b 0x82C21240 from 0x82C22B14 - target not in any function";
         assert_eq!(unresolved_calls(log), vec![("0x82C22B14".into(), "0x82C21240".into())]);
     }
+}
+
+fn request_json_project(
+    python: &str,
+    command: &str,
+    project: &str,
+    ctx: &egui::Context,
+) -> Receiver<Result<serde_json::Value, String>> {
+    let (tx, rx) = mpsc::channel();
+    let python = python.to_string();
+    let command = command.to_string();
+    let project = project.to_string();
+    let ctx = ctx.clone();
+    std::thread::spawn(move || {
+        let mut c = std::process::Command::new(python);
+        c.arg(toolchain::home().join("xbo360.py")).arg(command).arg(project);
+        toolchain::hide_console(&mut c);
+        let result = c.output().map_err(|e| e.to_string()).and_then(|o| {
+            if !o.status.success() {
+                return Err(String::from_utf8_lossy(&o.stderr).to_string());
+            }
+            serde_json::from_slice(&o.stdout).map_err(|e| e.to_string())
+        });
+        let _ = tx.send(result);
+        ctx.request_repaint();
+    });
+    rx
 }
 
 fn request_json(
