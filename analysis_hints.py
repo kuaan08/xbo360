@@ -3,6 +3,7 @@
 This module never guesses a function's size or changes original game assets.
 """
 import json
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -47,6 +48,58 @@ def diagnose(root):
             "warning": "A PowerPC b may be a tail call OR an intra-function jump. "
                        "Verify boundaries and size by disassembling the XEX."}
 
+
+
+# Metadata only: obtained from disassembling a user-provided XEX. No game bytes
+# or copyrighted executable contents are distributed with the workbench.
+KNOWN_EXACT_BINARIES = {
+    "9f718cac4cc7fb33ec7204e90d0901387f81e18c953eb1f90c40be5e2e3ff021": {
+        "title": "Rise of the Tomb Raider",
+        "title_id": "53510823",
+        "media_id": "2427ED57",
+        "version": "0.0.0.6",
+        "hints": [{
+            "address": "0x82C21240",
+            "size": 112,
+            "source_branch": "0x82C22B14",
+            "evidence": ("PowerPC code ends with blr at 0x82C212AC; "
+                         "next PDATA function begins at 0x82C212B0; "
+                         "missing leaf function spans 0x82C21240..0x82C212B0."),
+        }],
+    },
+}
+
+
+def suggest_hints(root):
+    """Suggest existing evidence-backed boundaries ONLY for exact matching XEX bytes.
+
+    This never writes anything. GUI confirmation and save_hint are separate actions.
+    """
+    root, manifest, state = project_state(root)
+    xex_value = state.get("xex")
+    if not isinstance(xex_value, str) or not xex_value:
+        raise ValueError("Project executable path missing; no verified hints available.")
+    xex = Path(xex_value)
+    if not xex.is_file() or xex.suffix.lower() != ".xex":
+        raise ValueError("Original XEX is missing or moved.")
+    digest = hashlib.sha256()
+    with xex.open("rb") as file:
+        if file.read(4) != b"XEX2":
+            raise ValueError("Project executable is not a valid XEX2.")
+        file.seek(0)
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    value = digest.hexdigest()
+    known = KNOWN_EXACT_BINARIES.get(value)
+    return {
+        "project": str(root),
+        "matching_revision": bool(known),
+        "title": known["title"] if known else None,
+        "hints": known["hints"] if known else [],
+        "warning": ("Hints match the exact executable checksum and only address analysis "
+                    "boundaries; they do not establish gameplay compatibility. "
+                    "Select a hint and explicitly save it before codegen."),
+    }
 
 def atomic_write(path, text):
     fd, tmp = tempfile.mkstemp(prefix=".xbo360-", dir=path.parent)
