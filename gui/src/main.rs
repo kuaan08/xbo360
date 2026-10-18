@@ -34,6 +34,7 @@ struct Settings {
     android_runtime_source: String,
     disable_auto_update_check: bool,
     auto_install_updates: bool,
+    reduce_motion: bool,
 }
 
 struct App {
@@ -63,6 +64,10 @@ struct App {
     hint_suggestions: Option<serde_json::Value>,
     hint_suggestions_error: String,
     check_after_job: bool,
+    assistant_project: Option<String>,
+    assistant_rx: Option<Receiver<Result<serde_json::Value, String>>>,
+    assistant_report: Option<serde_json::Value>,
+    assistant_error: String,
 }
 
 impl App {
@@ -123,6 +128,10 @@ impl App {
             hint_suggestions: None,
             hint_suggestions_error: String::new(),
             check_after_job: false,
+            assistant_project: None,
+            assistant_rx: None,
+            assistant_report: None,
+            assistant_error: String::new(),
         }
     }
 
@@ -183,6 +192,15 @@ impl App {
             "--parent-pid".into(), std::process::id().to_string(),
             "--app-dir".into(), toolchain::home().to_string_lossy().into_owned(),
         ]);
+    }
+
+    fn diagnose_project(&mut self, root: String, ctx: &egui::Context) {
+        self.assistant_project = Some(root.clone());
+        self.assistant_report = None;
+        self.assistant_error.clear();
+        self.assistant_rx = Some(request_json_project(
+            &self.settings.python, "bug-assistant", &root, ctx));
+        self.tab = 3;
     }
 
     fn sdk_args(&self, args: &mut Vec<String>) {
@@ -425,6 +443,9 @@ impl App {
                         self.hint_suggestions = None;
                         self.hint_suggestions_error.clear();
                     }
+                    if ui.add_enabled(state.is_some(), egui::Button::new("Analyze bugs")).clicked() {
+                        self.diagnose_project(root.clone(), ctx);
+                    }
                     if ui.button("Open folder").clicked() {
                         open_path(path);
                     }
@@ -458,6 +479,9 @@ impl App {
                 self.save();
             }
         });
+        if ui.checkbox(&mut self.settings.reduce_motion, "Reduce UI motion").changed() {
+            self.save();
+        }
         ui.checkbox(&mut self.settings.force_codegen, "Force ReXGlue analysis (experimental)");
         ui.label("Force is optional and unsafe; it cannot fix bad function boundaries.");
         ui.label("Build jobs (0 = automatic)");
@@ -493,12 +517,15 @@ impl eframe::App for App {
         let ctx = ui.ctx().clone();
         self.poll();
         self.poll_background(&ctx);
+        ctx.style_mut(|style| {
+            style.animation_time = if self.settings.reduce_motion { 0.0 } else { 0.16 };
+        });
         if self.restart_for_update {
             self.restart_for_update = false;
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }
-        if self.job.is_some() || self.tools_rx.is_some() || self.update_rx.is_some() {
+        if self.job.is_some() || self.tools_rx.is_some() || self.update_rx.is_some() || self.assistant_rx.is_some() {
             ctx.request_repaint_after(Duration::from_millis(120));
         }
         if let Some(path) =
@@ -525,7 +552,7 @@ impl eframe::App for App {
                             .color(Color32::WHITE),
                     );
                     ui.add_space(12.0);
-                    for (i, label) in ["Recompile", "Library", "About"].iter().enumerate() {
+                    for (i, label) in ["Recompile", "Library", "About", "Assistant"].iter().enumerate() {
                         if ui.selectable_label(self.tab == i, *label).clicked() {
                             self.tab = i;
                         }
@@ -589,8 +616,9 @@ impl eframe::App for App {
             });
         if self.tab == 0 {
             egui::Panel::left("form")
-                .resizable(false)
-                .exact_size(420.0)
+                .resizable(true)
+                .default_width(380.0)
+                .width_range(320.0..=480.0)
                 .frame(
                     egui::Frame::new()
                         .fill(theme::PANEL)
@@ -616,6 +644,8 @@ impl eframe::App for App {
                         ui.add_enabled_ui(self.job.is_none(), |ui| {
                             if self.tab == 1 {
                                 self.projects(ui, &ctx);
+                            } else if self.tab == 3 {
+                                self.assistant_ui(ui, &ctx);
                             } else {
                                 self.about(ui);
                             }
@@ -680,6 +710,13 @@ impl App {
                 }
             }
         }
+        if let Some(result) = self.assistant_rx.as_ref().and_then(|r| r.try_recv().ok()) {
+            self.assistant_rx = None;
+            match result {
+                Ok(v) => self.assistant_report = Some(v),
+                Err(e) => self.assistant_error = e,
+            }
+        }
         if let Some(result) = self.hint_rx.as_ref().and_then(|r| r.try_recv().ok()) {
             self.hint_rx = None;
             match result {
@@ -690,6 +727,90 @@ impl App {
         if self.job.is_none() && self.check_after_job {
             self.check_after_job = false;
             self.tools_rx = Some(request_json(&self.settings.python, "toolchain", ctx));
+        }
+    }
+
+    fn assistant_ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        ui.heading("Experimental Bug Assistant");
+        ui.label("Offline, evidence-based analysis. No generative AI or automatic edits are used.");
+        ui.horizontal_wrapped(|ui| {
+            ui.label("Project:");
+            ui.monospace(self.assistant_project.as_deref().unwrap_or("Choose a project below"));
+            if ui.add_enabled(self.assistant_project.is_some() && self.assistant_rx.is_none(),
+                              egui::Button::new("Analyze again")).clicked() {
+                if let Some(root) = self.assistant_project.clone() {
+                    self.diagnose_project(root, ctx);
+                }
+            }
+        });
+        ui.horizontal_wrapped(|ui| {
+            for root in self.settings.projects.clone() {
+                let label = Path::new(&root).file_name().and_then(|x| x.to_str()).unwrap_or("Project");
+                if ui.button(label).on_hover_text(&root).clicked() {
+                    self.diagnose_project(root, ctx);
+                }
+            }
+        });
+        if self.assistant_rx.is_some() {
+            ui.horizontal(|ui| { ui.spinner(); ui.label("Reading project and latest runtime logs..."); });
+        }
+        if !self.assistant_error.is_empty() {
+            ui.colored_label(theme::ERROR, &self.assistant_error);
+        }
+        if let Some(report) = &self.assistant_report {
+            let mut summary = vec![format!(
+                "Xbox360Recomp bug report\nProject status: {}\nHints: {}\nRuntime logs: {}",
+                report["project_status"].as_str().unwrap_or("unknown"),
+                report["hint_count"].as_u64().unwrap_or(0),
+                report["reports_found"].as_u64().unwrap_or(0),
+            )];
+            if let Some(issues) = report["issues"].as_array() {
+                for issue in issues {
+                    summary.push(format!(
+                        "\n{} [{}]\n{}\nNext step: {}",
+                        issue["id"].as_str().unwrap_or("diagnostic"),
+                        issue["confidence"].as_str().unwrap_or("unknown"),
+                        issue["summary"].as_str().unwrap_or(""),
+                        issue["action"].as_str().unwrap_or(""),
+                    ));
+                }
+            }
+            if ui.button("Copy safe summary for ChatGPT or GitHub issue").clicked() {
+                ui.ctx().copy_text(summary.join("\n"));
+            }
+            ui.label("Copying is your choice. The summary excludes full local file paths and game bytes.");
+            ui.separator();
+            if let Some(issues) = report["issues"].as_array() {
+                if issues.is_empty() {
+                    ui.colored_label(theme::SUCCESS, "No known patterns detected. This does not prove game compatibility.");
+                }
+                for issue in issues {
+                    let color = match issue["level"].as_str().unwrap_or("") {
+                        "fatal" => theme::ERROR,
+                        "error" | "warning" => theme::WARNING,
+                        _ => theme::ACCENT,
+                    };
+                    card(ui, color, |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.colored_label(color, issue["id"].as_str().unwrap_or("Issue"));
+                            ui.small(issue["confidence"].as_str().unwrap_or(""));
+                        });
+                        ui.label(issue["summary"].as_str().unwrap_or(""));
+                        ui.label(RichText::new(issue["action"].as_str().unwrap_or("")).color(theme::TEXT_WEAK));
+                    });
+                    ui.add_space(8.0);
+                }
+            }
+            if let Some(history) = report["history"].as_array() {
+                section(ui, "Recent boot attempts");
+                for (index, entry) in history.iter().enumerate() {
+                    let targets = entry["function_targets"].as_array()
+                        .map(|items| items.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join(", "))
+                        .unwrap_or_default();
+                    ui.monospace(format!("{} · {}", index + 1,
+                        if targets.is_empty() { "no fatal indirect target" } else { &targets }));
+                }
+            }
         }
     }
 
@@ -813,7 +934,7 @@ impl App {
     }
 
     fn about(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Xbox360Recomp 0.3.6");
+        ui.heading("Xbox360Recomp 0.3.7");
         ui.label("SwitchRecomp by MZ Labs — original interface foundation (Apache-2.0).");
         ui.label("Xbox 360 fork additions: katakishi0 · hosting: kuaan08.");
         ui.label("ReXGlue by Tom Clay and contributors, with Xenia and XenonRecomp research.");
