@@ -1357,7 +1357,7 @@ fn field(ui: &mut egui::Ui, label: &str, value: &mut String, folder: bool, xex: 
             let selected = if folder {
                 dialog.pick_folder()
             } else if xex {
-                dialog.add_filter("Game input", &["xex"]).pick_file()
+                dialog.add_filter("Xbox 360 game", &["xex", "iso", "xiso"]).pick_file()
             } else {
                 dialog.pick_file()
             };
