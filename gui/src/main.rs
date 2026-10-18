@@ -539,7 +539,7 @@ impl eframe::App for App {
         let ctx = ui.ctx().clone();
         self.poll();
         self.poll_background(&ctx);
-        ctx.style_mut(|style| {
+        ctx.style_mut_of(egui::Theme::Dark, |style| {
             style.animation_time = if self.settings.reduce_motion { 0.0 } else { 0.16 };
         });
         if self.restart_for_update {
@@ -639,8 +639,7 @@ impl eframe::App for App {
         if self.tab == 0 {
             egui::Panel::left("form")
                 .resizable(true)
-                .default_width(380.0)
-                .width_range(320.0..=480.0)
+                .default_size(380.0)
                 .frame(
                     egui::Frame::new()
                         .fill(theme::PANEL)
