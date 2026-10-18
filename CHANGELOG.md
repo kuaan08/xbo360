@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.7
+
+- Introduce the **Experimental Bug Assistant** in the Rust desktop frontend and an offline CLI. It scans recent per-game runtime logs and build metadata, classifies fatal PowerPC indirect calls, physical heap errors, missing guest assets, unavailable Vulkan, and crash history. All fixes remain manual and evidence-based; no personal logs or game files are transmitted to an AI service. Copyable summaries deliberately exclude full local paths.
+- Improve the exact-XEX function hints for Rise of the Tomb Raider: include vetted additional PowerPC method addresses 0x82286388 (20 bytes) and 0x82286360 (40 bytes) based on reconstructed control flow; do not duplicate an address already present in the main manifest.
+- Add a **conservative RTTI-independent pointer-table scanner prototype** for previously decoded mapped PE images. Big-endian code-pointer runs are only candidates; they are not blindly registered as functions, and encrypted XEX cannot be scanned as plaintext.
+- Introduce **experimental Windows Vulkan + DirectX 12 SDK source builds**, pinned to the official ReXGlue v0.10.0 commit. Build all dependencies in a separate prefix from Settings with explicit consent, verify CMake flags and plugin files, and only select that SDK on build success. Add a separate Vulkan SDK CI workflow. The **bundled SDK remains D3D12-only** pending runtime validation; compilation does not establish playable games.
+- Refresh UI with an Assistant tab, per-project Analyze bugs, resizable project form, reduced-motion preference, additional diagnostics, clearer limitations and safer handling of function hints.
+- No claim is made that physical-heap failures or Rise of the Tomb Raider black-screen crashes are fixed by these changes. Vulkan rendering on Windows remains experimental until verified on a real GPU.
+
 ## 0.3.6
 
 - Add an **in-app Windows portable updater**: check GitHub releases automatically on startup, show new-version notification, download a release directly inside the app, and install/restart with one click. No manual browser navigation, ZIP extraction or copying of application files.
