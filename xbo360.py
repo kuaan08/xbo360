@@ -25,7 +25,7 @@ import zipfile
 # application modules are trusted payload files, not modules from the CWD.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-VERSION = "0.3.1"
+VERSION = "0.3.2"
 SDK_VERSION = "0.10.0"
 SDK_COMMIT = "f5337cdc947ff6d4c4196737e2c807a48f2a1fc2"
 SDK_HASHES = {
@@ -318,7 +318,8 @@ def build(root: Path, sdk: Path | None = None, jobs: int = 0,
     sdk = (sdk or Path(state["sdk"])).resolve()
     check_sdk(sdk)
     import prerequisites
-    env = prerequisites.build_environment()
+    # Fail with a precise SDK/MSVC diagnosis before expensive codegen/CMake.
+    env = prerequisites.build_environment(require_windows_linker=os.name == "nt")
     if not shutil.which("cmake", path=env.get("PATH")) or not shutil.which("ninja", path=env.get("PATH")):
         raise RecompError("CMake 3.25+ and Ninja must be on PATH. Windows also requires Visual Studio C++ and Clang 20+.")
     # Run explicit codegen before configure so generated source lists exist.
@@ -385,6 +386,15 @@ def doctor(sdk: Path) -> bool:
     for tool in detected["tools"]:
         print(f"{tool['name']}: {tool['version'] or 'MISSING'}")
     print("Visual Studio: " + str(detected["visual_studio"] or "not found / not required on this host"))
+    if os.name == "nt":
+        linker = detected["windows_linker"]
+        print("MSVC / Windows SDK linker libraries: " + (
+            "READY" if linker["ready"] else "MISSING " + ", ".join(linker["missing_libraries"])))
+        if detected["environment_error"]:
+            print("Visual Studio environment: " + detected["environment_error"])
+        if not linker["ready"]:
+            print("Open Visual Studio Installer > Modify > Desktop development with C++; "
+                  "install MSVC x64/x86 build tools and a Windows 10/11 SDK.")
     return ok and detected["desktop_ready"]
 
 
