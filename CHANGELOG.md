@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.5
+
+- Investigate an actual Windows native startup crash for the exact Rise of the Tomb Raider XEX (SHA-256 `9f718cac...e3ff021`), after successful codegen and native compilation. Direct3D 12 initialization succeeded but did not render gameplay.
+- Confirm fatal unregistered guest target `0x823E7730` points to real PowerPC method code via the game's vtable. Add reviewed, exact-revision function hints at `0x823E7708` (40 B), `0x823E7730` (40 B), `0x823E7758` (44 B) and `0x823E7B78` (8 B). No changes to protected game binaries.
+- Add `diagnose-runtime` command classifying guest-dispatch crashes, physical heap errors, missing D: assets and optional update paths; optionally check paths relative to the project's original `game_root`.
+- Add runtime diagnosis and function-hint regression tests and check the game-root folder exists before launch. Preserve Force OFF and require explicit user approval before adding hints.
+- Runtime physical heap behavior and full retail-game startup remain unverified; this is an evidence-backed diagnostic and experimental workaround, not a game-playability claim.
+
 ## 0.3.4
 
 - Fix Windows CMake configuration reporting `CMAKE_MAKE_PROGRAM is not set` even when Ninja is installed but not visible to the process after Visual Studio environment initialization.
