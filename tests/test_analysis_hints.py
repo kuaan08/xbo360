@@ -102,12 +102,25 @@ class AnalysisTests(unittest.TestCase):
             "0x823E7730": 40,
             "0x823E7758": 44,
             "0x823E7B78": 8,
+            "0x82286388": 20,
+            "0x82286360": 40,
         })
         self.assertEqual(len(exact["hints"]), len(sizes))
         for address, size in sizes.items():
             with self.subTest(address=address):
                 self.assertEqual(int(address, 16) % 4, 0)
                 self.assertEqual(size % 4, 0)
+
+    def test_manual_toml_entries_are_not_duplicated_by_gui_hint(self):
+        self.manifest.write_text(
+            self.manifest.read_text() +
+            '[entrypoint.functions]\n"0x82286360" = { size = 40 }\n',
+            encoding="utf-8")
+        outcome = analysis_hints.save_hint(self.root, "0x82286360", 40)
+        self.assertTrue(outcome["already_present"])
+        self.assertFalse((self.root / analysis_hints.HINT_FILE).exists())
+        with self.assertRaisesRegex(ValueError, "conflicting"):
+            analysis_hints.save_hint(self.root, "0x82286360", 44)
 
     def test_force_is_a_rexglue_global_argument(self):
         captured = []
