@@ -68,6 +68,7 @@ struct App {
     assistant_rx: Option<Receiver<Result<serde_json::Value, String>>>,
     assistant_report: Option<serde_json::Value>,
     assistant_error: String,
+    activate_vulkan_after_job: bool,
 }
 
 impl App {
@@ -132,6 +133,7 @@ impl App {
             assistant_rx: None,
             assistant_report: None,
             assistant_error: String::new(),
+            activate_vulkan_after_job: false,
         }
     }
 
@@ -264,6 +266,20 @@ impl App {
                 job::Phase::Failed
             };
             self.log.push(format!("Process exited: {code:?}"));
+            if self.activate_vulkan_after_job {
+                self.activate_vulkan_after_job = false;
+                if !cancelled && code == Some(0) {
+                    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+                        self.settings.sdk = PathBuf::from(local)
+                            .join("Xbox360Recomp").join("sdk-vulkan").join("0.10.0").join("install")
+                            .to_string_lossy().into_owned();
+                        self.log.push("Experimental dual-backend SDK selected in Settings. Rebuild each title to link it.".into());
+                        self.save();
+                    }
+                } else {
+                    self.log.push("Experimental Vulkan SDK was NOT activated; check compilation output.".into());
+                }
+            }
             if self.update_install_requested {
                 self.update_install_requested = false;
                 if !cancelled && code == Some(0) {
@@ -495,7 +511,13 @@ impl App {
                 }
                 ui.selectable_value(&mut self.settings.renderer, "vulkan".into(), "Vulkan");
             });
-        ui.label("Official ReXGlue 0.10.0 Windows SDK is built with DX12; Vulkan requires a separately built Vulkan-enabled SDK/plugin.");
+        ui.label("Bundled Windows SDK: Direct3D 12. Vulkan needs an independently built dual-backend SDK.");
+        if cfg!(windows) && ui.add_enabled(self.job.is_none(),
+            egui::Button::new("Build experimental Vulkan + DX12 SDK from pinned source")).clicked() {
+            self.install_confirmation = Some("vulkan-sdk".into());
+        }
+        ui.colored_label(theme::WARNING,
+            "Experimental developer feature: downloads all upstream submodules and compiles the complete SDK.              Does not change the installed DX12 SDK. Rebuild games after selecting the new prefix.");
         section(ui, "Automatic updates");
         let mut auto_check = !self.settings.disable_auto_update_check;
         if ui.checkbox(&mut auto_check, "Check for new versions automatically when the app starts").changed() {
@@ -1075,12 +1097,20 @@ impl App {
         }
         if let Some(tool) = self.install_confirmation.clone() {
             egui::Window::new("Confirm installation").collapsible(false).show(ctx,|ui| {
-                ui.label(format!("Install {tool}? This downloads tools and starts their installers. Android tools require accepting the Android SDK/NDK license at developer.android.com/studio/terms."));
+                ui.label(if tool == "vulkan-sdk" {
+                    "Build the ReXGlue 0.10.0 Vulkan + DX12 plugin from exact pinned official sources? This downloads all its submodules and compiles a separate SDK. The project runtime will remain experimental; your existing bundled SDK is kept."
+                } else {
+                    "This downloads official developer tools and may open a system installer. Android dependencies require accepting their licences."
+                });
                 ui.horizontal(|ui| {
                     if ui.button("Install").clicked() {
                         self.install_confirmation=None;
                         if tool == "android-tools" {self.start(ctx,vec!["setup-android".into(),"--yes".into()]);}
-                        else {self.start(ctx,vec!["install-tools".into(),tool,"--yes".into()]);}
+                        else if tool == "vulkan-sdk" {
+                            self.activate_vulkan_after_job = true;
+                            self.start(ctx, vec!["build-vulkan-sdk".into(), "--yes".into(),
+                                "--jobs".into(), self.settings.jobs.clamp(1, 8).to_string()]);
+                        } else {self.start(ctx,vec!["install-tools".into(),tool,"--yes".into()]);}
                     }
                     if ui.button("Cancel").clicked() {self.install_confirmation=None;}
                 });
