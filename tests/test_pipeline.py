@@ -152,7 +152,7 @@ class SDKIntegrationTests(unittest.TestCase):
             self.assertIn('REXCVAR_GET(xbo_renderer)', header)
             import tomllib
             m = tomllib.loads((project / state["manifest"]).read_text())
-            self.assertEqual(Path(m["entrypoint"]["file_path"]), exe)
+            self.assertEqual(Path(m["entrypoint"]["file_path"]).resolve(), exe.resolve())
             # Synthetic header is intentionally not a runnable XEX: SDK must fail cleanly.
             with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(x.RecompError):
                 x.codegen(project)
