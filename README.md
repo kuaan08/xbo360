@@ -165,6 +165,24 @@ tested Vulkan dependencies. Loading a Windows Direct3D 12 build with
 `--xbo_renderer vulkan` produces a clear "not compiled" error; an
 application update alone does not add Vulkan or make games compatible.
 
+## Compilation output visibility and window sizing
+
+Starting in v0.3.9 the complete stdout/stderr stream has a dedicated
+**Output** tab. It opens automatically when you start a command such as
+**Prepare**, **Generate C++**, **Build**, **Run** or **Export APK** from any screen.
+While idle the Recompile page does not render a second console under its
+form; a shortcut can reopen the last output after the job finishes.
+The full-width console stays visible until **Clear** is selected.
+**Copy** and **Save...** still work for the complete in-memory log buffer
+(up to the normal log retention limit); project build logs stay on disk.
+
+The Recompile sidebar starts at 370 pixels, is constrained to 300–430 pixels
+and resizes **only when the user drags its divider**. The log pane does not
+automatically expand the sidebar, and path Browse widgets can no longer
+force the form to grow beyond the available space. The Output tab is
+intentionally full-width to preserve readable long CMake, Clang and ReXGlue
+messages, including after failed builds.
+
 ## Android APK export fails before codegen: Ninja not detected on Windows
 
 If the Android export log stops after `Building matching Android SDK host code generator...` with
