@@ -72,8 +72,43 @@ def ensure_source(source, env, log):
     return source
 
 
-def native_project(project, source, ndk, env, jobs, log):
+def android_ninja(env):
+    """Use the same validated Ninja discovery as normal Windows builds.
+
+    Android host codegen and NDK builds are separate CMake projects. Both must
+    receive the explicit executable, because vcvars, WinGet and Android tools
+    may expose different PATH values.
+    """
+    import prerequisites
+    path = prerequisites.ninja_executable(env)
+    if path is None:
+        raise RuntimeError(
+            "Ninja is missing for the Android host/NDK build. "
+            "Open Settings > Install Ninja, or run "
+            "'winget install --id Ninja-build.Ninja --exact' on Windows, "
+            "restart the app and use Check toolchain."
+        )
+    return Path(path).resolve()
+
+
+def android_cmake_ninja_args(ninja):
+    """Do an explicit CMake configure before every NDK build.
+
+    This avoids both CMAKE_MAKE_PROGRAM lookup failures and the prior
+    Windows Ninja manifest regeneration loop for generated CMake inputs.
+    """
+    ninja = Path(ninja)
+    if not ninja.is_absolute():
+        raise ValueError("Ninja path must be absolute.")
+    return [f"-DCMAKE_MAKE_PROGRAM:FILEPATH={ninja.as_posix()}",
+            "-DCMAKE_SUPPRESS_REGENERATION=ON"]
+
+
+def native_project(project, source, ndk, env, jobs, log, ninja=None):
     state = load_project(project)
+    ninja = Path(ninja) if ninja is not None else android_ninja(env)
+    ninja_args = android_cmake_ninja_args(ninja)
+    print(f"Android host and NDK Ninja: {ninja}", flush=True)
     if jobs < 1:
         jobs = max(1, os.cpu_count() or 1)
     host_build = cache_root() / "android/host-tools"
@@ -95,7 +130,8 @@ endif()
         run(["cmake", "-S", str(source), "-B", str(host_build), "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
              f"-DCMAKE_C_COMPILER={cc}", f"-DCMAKE_CXX_COMPILER={cxx}", "-DREXGLUE_ENABLE_TRACY=OFF",
              "-DREXGLUE_ENABLE_PERF_COUNTERS=OFF", "-DREXGLUE_ENABLE_FIDELITYFX=OFF",
-             f"-DCMAKE_PROJECT_ReXGlue_INCLUDE={host_options.as_posix()}"], HERE, log, env)
+             f"-DCMAKE_PROJECT_ReXGlue_INCLUDE={host_options.as_posix()}",
+             *ninja_args], HERE, log, env)
         run(["cmake", "--build", str(host_build), "--target", "rexglue", "--parallel", str(jobs)], HERE, log, env)
     work = project / "android-export"
     generated = work / "native"
@@ -143,7 +179,7 @@ rexglue_configure_target(xbo_game)
          f"-DCMAKE_TOOLCHAIN_FILE={ndk.as_posix()}/build/cmake/android.toolchain.cmake",
          "-DANDROID_ABI=arm64-v8a", "-DANDROID_PLATFORM=android-33", "-DANDROID_STL=c++_shared",
          "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON", "-DCMAKE_BUILD_TYPE=Release",
-         f"-DREXSDK_DIR={source.as_posix()}"], HERE, log, env)
+         f"-DREXSDK_DIR={source.as_posix()}", *ninja_args], HERE, log, env)
     run(["cmake", "--build", str(build_dir), "--target", "xbo_game", "--parallel", str(jobs)], HERE, log, env)
     libs = list(build_dir.rglob("libxbo_game.so"))
     runtime = list((source / "out").glob("linux-arm64/librexruntime.so"))
@@ -226,8 +262,11 @@ def export(project=None, source=None, ndk=None, sdk=None, runtime=False, jobs=2)
         ndk = Path(ndk or os.environ.get("ANDROID_NDK_ROOT") or sdk / "ndk/27.2.12479018").resolve()
         if not (ndk / "build/cmake/android.toolchain.cmake").is_file():
             raise ValueError("Install Android NDK r27c (27.2.12479018) or select its directory")
+        # Validate the host build tool BEFORE cloning large native submodules.
+        ninja = android_ninja(env)
+        print(f"Verified Ninja for Android export: {ninja}", flush=True)
         source = ensure_source(source, env, work / "build.log")
-        libs, java = native_project(project.resolve(), source, ndk, env, jobs, work / "build.log")
+        libs, java = native_project(project.resolve(), source, ndk, env, jobs, work / "build.log", ninja=ninja)
         license_files = [(p.relative_to(source).as_posix(), p) for p in source.rglob("*")
                          if p.is_file() and ".git" not in p.parts
                          and p.name.upper().startswith(("LICENSE", "COPYING")) and p.stat().st_size < 1024 * 1024]
