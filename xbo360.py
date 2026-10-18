@@ -25,7 +25,7 @@ import zipfile
 # application modules are trusted payload files, not modules from the CWD.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-VERSION = "0.3.2"
+VERSION = "0.3.3"
 SDK_VERSION = "0.10.0"
 SDK_COMMIT = "f5337cdc947ff6d4c4196737e2c807a48f2a1fc2"
 SDK_HASHES = {
@@ -311,6 +311,19 @@ def codegen(root: Path, sdk: Path | None = None, force: bool = False) -> dict:
     return state
 
 
+def cmake_configure_args(preset: str, sdk: Path) -> list[str]:
+    """Every workbench build does codegen and a fresh CMake configure first.
+
+    ReXGlue-generated sources.cmake and other CMake inputs can have timestamps
+    ahead of build.ninja on Windows, causing Ninja to regenerate 100 times.
+    Because xbo360 always runs CMake configure explicitly, automatic Ninja
+    regeneration is both redundant and susceptible to that loop.
+    """
+    return ["cmake", "--preset", preset,
+            f"-DCMAKE_PREFIX_PATH={sdk.as_posix()}",
+            "-DCMAKE_SUPPRESS_REGENERATION=ON"]
+
+
 def build(root: Path, sdk: Path | None = None, jobs: int = 0,
           configuration: str = "Release", force: bool = False) -> dict:
     root = root.resolve()
@@ -330,8 +343,8 @@ def build(root: Path, sdk: Path | None = None, jobs: int = 0,
     write_json(root / PROJECT_FILE, state)
     print("Compiling with CMake and Clang...", flush=True)
     try:
-        run(["cmake", "--preset", preset, f"-DCMAKE_PREFIX_PATH={sdk.as_posix()}"], root,
-            root / "build.log", env)
+        print("CMake: configuring explicit codegen sources; disabling redundant Ninja regeneration.", flush=True)
+        run(cmake_configure_args(preset, sdk), root, root / "build.log", env)
         args = ["cmake", "--build", "--preset", preset, "--parallel", str(jobs or os.cpu_count() or 1)]
         run(args, root, root / "build.log", env)
         binary_dir = root / "out" / "build" / preset
