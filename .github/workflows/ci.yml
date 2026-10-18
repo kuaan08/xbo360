@@ -1,0 +1,49 @@
+name: Test and package Xbox 360 Recomp
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: gui
+      - name: Python checks
+        run: python -m unittest discover -s tests -v
+      - name: Install pinned SDK
+        run: python xbo360.py install-sdk --sdk sdk
+      - name: Official SDK contract tests
+        shell: bash
+        run: XBO360_TEST_SDK="$(pwd)/sdk" python -m unittest discover -s tests -v
+      - name: Rust checks
+        run: cargo test --locked --manifest-path gui/Cargo.toml
+      - name: Build frontend
+        if: runner.os == 'Windows'
+        run: cargo build --release --locked --manifest-path gui/Cargo.toml
+      - name: Package Windows portable frontend
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./ci/package-windows.ps1
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: Xbox360Recomp-Windows-x64
+          path: dist/Xbox360Recomp-Windows-x64.zip
+          retention-days: 14
+          if-no-files-found: error
