@@ -662,6 +662,9 @@ impl eframe::App for App {
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         ui.add_enabled_ui(self.job.is_none(), |ui| self.new_project(ui, &ctx));
                     });
+                    // Keep the width chosen with the drag handle. Without
+                    // consuming available width, content may resize this panel.
+                    ui.take_available_width();
                 });
             egui::CentralPanel::default()
                 .frame(page_frame())
@@ -1385,7 +1388,7 @@ fn field(ui: &mut egui::Ui, label: &str, value: &mut String, folder: bool, xex: 
     ui.horizontal(|ui| {
         ui.add(
             egui::TextEdit::singleline(value)
-                .desired_width((ui.available_width() - 90.0).max(180.0)),
+                .desired_width((ui.available_width() - 110.0).clamp(110.0, 285.0)),
         );
         if ui.button("Browse...").clicked() {
             let dialog = rfd::FileDialog::new();
