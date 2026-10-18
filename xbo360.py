@@ -25,7 +25,7 @@ import zipfile
 # application modules are trusted payload files, not modules from the CWD.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-VERSION = "0.3.4"
+VERSION = "0.3.5"
 SDK_VERSION = "0.10.0"
 SDK_COMMIT = "f5337cdc947ff6d4c4196737e2c807a48f2a1fc2"
 SDK_HASHES = {
@@ -390,6 +390,10 @@ def launch(root: Path, renderer: str | None = None, fullscreen: bool | None = No
     if state.get("status") != "built" or not state.get("executable"):
         raise RecompError("This project has no successfully built executable.")
     exe = Path(state["executable"])
+    if not Path(state.get("game_root", "")).is_dir():
+        raise RecompError("Extracted game data directory is missing. "
+                          "Select the original game_root or restore the game's files; "
+                          "do not create empty asset placeholders.")
     if not exe.is_file() or not exe.resolve().is_relative_to(root / "out"):
         raise RecompError("Built executable is missing or outside the project output directory.")
     env = os.environ.copy()
@@ -474,6 +478,9 @@ def main(argv=None) -> int:
     compile_cmd.add_argument("--jobs", type=int, default=0)
     known_cmd = commands.add_parser("suggest-hints", help="Suggest verified function boundaries for an exact XEX checksum")
     known_cmd.add_argument("project", type=Path)
+    runtime_cmd = commands.add_parser("diagnose-runtime", help="Inspect crash log: fatal indirect calls, physical heap and file paths")
+    runtime_cmd.add_argument("log", type=Path)
+    runtime_cmd.add_argument("--project", type=Path, help="Optional prepared project to check missing disc files")
     diagnose_cmd = commands.add_parser("diagnose", help="Inspect the last analysis errors for a prepared project")
     diagnose_cmd.add_argument("project", type=Path)
     hint_cmd = commands.add_parser("function-hint", help="Record a manually verified function boundary")
@@ -516,6 +523,9 @@ def main(argv=None) -> int:
         elif args.command == "suggest-hints":
             from analysis_hints import suggest_hints
             print(json.dumps(suggest_hints(args.project), indent=2))
+        elif args.command == "diagnose-runtime":
+            from runtime_diagnostics import diagnose_runtime
+            print(json.dumps(diagnose_runtime(args.log, args.project), indent=2))
         elif args.command == "diagnose":
             from analysis_hints import diagnose
             print(json.dumps(diagnose(args.project), indent=2))
