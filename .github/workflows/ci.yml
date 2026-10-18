@@ -152,5 +152,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view v0.3.4 >/dev/null 2>&1 || gh release create v0.3.4 --target "$GITHUB_SHA" --title 'Xbox 360 Recomp 0.3.4' --notes-file CHANGELOG.md
-          gh release upload v0.3.4 release/* --clobber
+          gh release view v0.3.5 >/dev/null 2>&1 || gh release create v0.3.5 --target "$GITHUB_SHA" --title 'Xbox 360 Recomp 0.3.5' --notes-file CHANGELOG.md
+          gh release upload v0.3.5 release/* --clobber
