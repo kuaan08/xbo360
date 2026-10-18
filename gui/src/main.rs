@@ -28,6 +28,7 @@ struct Settings {
     jobs: u32,
     recent: Vec<String>,
     target_android: bool,
+    force_codegen: bool,
     android_sdk: String,
     android_ndk: String,
     android_runtime_source: String,
@@ -161,6 +162,7 @@ impl App {
         self.sdk_args(&mut args);
         if stage == "recompile" {
             args.extend(["--jobs".into(), self.settings.jobs.to_string()]);
+            if self.settings.force_codegen { args.push("--force".into()); }
         }
         if !self.settings.projects.contains(&self.settings.project)
             && !self.settings.project.is_empty()
@@ -242,6 +244,10 @@ impl App {
         ui.text_edit_singleline(&mut self.settings.name);
         ui.add_space(10.0);
         section(ui, "3  ·  Target and build");
+        ui.checkbox(&mut self.settings.force_codegen, "Force code generation (experimental)");
+        if self.settings.force_codegen {
+            ui.colored_label(theme::WARNING, "Skips some analysis failures; generated code may crash or fail to compile.");
+        }
         ui.horizontal(|ui| {
             ui.selectable_value(&mut self.settings.target_android, false, "Windows / Linux");
             ui.selectable_value(&mut self.settings.target_android, true, "Android APK");
@@ -318,6 +324,7 @@ impl App {
                     {
                         let mut args = vec!["codegen".into(), root.clone()];
                         self.sdk_args(&mut args);
+                        if self.settings.force_codegen { args.push("--force".into()); }
                         self.start(ctx, args);
                     }
                     if ui
@@ -331,6 +338,7 @@ impl App {
                             self.settings.jobs.to_string(),
                         ];
                         self.sdk_args(&mut args);
+                        if self.settings.force_codegen { args.push("--force".into()); }
                         self.start(ctx, args);
                     }
                     if ui
@@ -388,6 +396,8 @@ impl App {
                 self.save();
             }
         });
+        ui.checkbox(&mut self.settings.force_codegen, "Force ReXGlue analysis (experimental)");
+        ui.label("Force is optional and unsafe; it cannot fix bad function boundaries.");
         ui.label("Build jobs (0 = automatic)");
         ui.add(egui::DragValue::new(&mut self.settings.jobs).range(0..=256));
         egui::ComboBox::from_label("Renderer at launch")
