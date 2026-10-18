@@ -22,6 +22,8 @@ def release(current, platform_name):
     desired = "Xbox360Recomp-Windows-x64.zip" if platform_name == "win-amd64" else "Xbox360Recomp-Android.apk"
     asset = next((a for a in data.get("assets", []) if a.get("name") == desired), None)
     tag = data.get("tag_name", "")
+    if not re.fullmatch(r"v?\d+\.\d+\.\d+(?:[-+.][A-Za-z0-9.-]+)?", tag):
+        raise ValueError("Release has an unsupported version tag")
     numeric = lambda v: tuple(int(n) for n in re.findall(r"\d+", v)[:3])
     return {"version": tag, "current": numeric(current) >= numeric(tag), "url": url,
             "asset": asset, "notes": data.get("body", "")[:10000]}
@@ -40,6 +42,8 @@ def download(info, directory):
     digest = asset.get("digest", "")
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
         raise ValueError("Release asset has no SHA-256 digest; refusing an unverified download")
+    if not isinstance(asset.get("size"), int) or not 0 < asset["size"] <= 2 * 1024**3:
+        raise ValueError("Invalid update package size")
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     target = directory / name

@@ -365,14 +365,12 @@ def doctor(sdk: Path) -> bool:
     except RecompError as exc:
         print(str(exc))
         ok = False
-    for name in ("cmake", "ninja", "clang" if os.name == "nt" else "clang-20",
-                 "clang++" if os.name == "nt" else "clang++-20"):
-        found = shutil.which(name)
-        print(f"{name}: {found or 'MISSING'}")
-        ok &= bool(found)
-    if os.name == "nt":
-        print("Run from a Visual Studio 2022 x64 developer environment for Windows SDK headers/libraries.")
-    return ok
+    import prerequisites
+    detected = prerequisites.report()
+    for tool in detected["tools"]:
+        print(f"{tool['name']}: {tool['version'] or 'MISSING'}")
+    print("Visual Studio: " + str(detected["visual_studio"] or "not found / not required on this host"))
+    return ok and detected["desktop_ready"]
 
 
 def main(argv=None) -> int:

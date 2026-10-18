@@ -335,15 +335,11 @@ impl App {
                         .add_enabled(status == "built", egui::Button::new("Run"))
                         .clicked()
                     {
-                        self.start(
-                            ctx,
-                            vec![
-                                "run".into(),
-                                root.clone(),
-                                "--renderer".into(),
-                                self.settings.renderer.clone(),
-                            ],
-                        );
+                        let mut args = vec!["run".into(), root.clone()];
+                        if !path.join("launch-settings.json").is_file() {
+                            args.extend(["--renderer".into(), self.settings.renderer.clone()]);
+                        }
+                        self.start(ctx, args);
                     }
                     if ui
                         .add_enabled(state.is_some(), egui::Button::new("Export APK"))
