@@ -121,12 +121,60 @@ def build_environment(*, require_windows_linker=False):
     return env
 
 
+
+def ninja_executable(env=None):
+    """Find a working Ninja executable across PATH, Visual Studio and WinGet.
+
+    A bare shutil.which() can report a stale shell shim, while Visual Studio
+    may install ninja.exe outside the launched app's PATH. Always validate
+    candidates by running --version before handing CMake an absolute path.
+    """
+    env = env if env is not None else os.environ
+    candidates = []
+    found = shutil.which("ninja", path=env.get("PATH"))
+    if found:
+        candidates.append(Path(found))
+    if os.name == "nt":
+        vs = vs_installation()
+        if vs:
+            candidates.extend([
+                vs / "Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe",
+                vs / "Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja",
+            ])
+        pf = Path(os.environ.get("ProgramFiles", "C:/Program Files"))
+        local = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData/Local"))
+        candidates.extend([
+            pf / "CMake/bin/ninja.exe",
+            pf / "Ninja/ninja.exe",
+            local / "Microsoft/WinGet/Links/ninja.exe",
+        ])
+    checked = set()
+    for candidate in candidates:
+        # Normalize for duplicates, but don't require every shell shim to
+        # implement resolve(strict=True).
+        try:
+            absolute = candidate.resolve()
+        except OSError:
+            continue
+        if absolute in checked or not absolute.is_file():
+            continue
+        checked.add(absolute)
+        try:
+            result = subprocess.run([str(absolute), "--version"], capture_output=True,
+                                    text=True, timeout=12, env=env)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if result.returncode == 0 and result.stdout.strip():
+            return absolute
+    return None
+
 def report():
     env = build_environment()
     tools = []
     for name in ("cmake", "ninja", "clang" if os.name == "nt" else "clang-20",
                  "clang++" if os.name == "nt" else "clang++-20", "java", "git"):
-        path = shutil.which(name, path=env.get("PATH"))
+        ninja_path = ninja_executable(env) if name == "ninja" else None
+        path = str(ninja_path) if ninja_path else (None if name == "ninja" else shutil.which(name, path=env.get("PATH")))
         version = ""
         if path:
             try:
