@@ -1,5 +1,8 @@
 """Offline tests for portable self-update ZIP validation and staging."""
 import tempfile
+import os
+import subprocess
+from unittest import mock
 from pathlib import Path
 import zipfile
 import unittest
@@ -21,6 +24,20 @@ class PortableUpdateTests(unittest.TestCase):
         with zipfile.ZipFile(self.package, "w", zipfile.ZIP_DEFLATED) as f:
             for name, content in files.items():
                 f.writestr(name, content)
+
+    @unittest.skipUnless(os.name == "nt", "Windows PowerShell-only syntax check")
+    def test_detached_swap_helper_is_valid_powershell(self):
+        check = (
+            "$tokens=$null; $errors=$null; "
+            "[void][System.Management.Automation.Language.Parser]::ParseInput("
+            "$env:XBO360_TEST_UPDATER_PS,[ref]$tokens,[ref]$errors); "
+            "if ($errors.Count -gt 0) { $errors | Out-String | Write-Output; exit 1 }"
+        )
+        with mock.patch.dict(os.environ, {"XBO360_TEST_UPDATER_PS": updates._WINDOWS_SWAP_SCRIPT}):
+            result = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", check],
+                capture_output=True, text=True, timeout=25)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_valid_release_unpacks_to_new_staging_folder(self):
         self.make_zip()
