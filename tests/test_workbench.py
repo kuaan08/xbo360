@@ -65,6 +65,17 @@ class DiscTests(unittest.TestCase):
 
 
 class SetupAndUpdateTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "nt", "Visual Studio environment test")
+    def test_visual_studio_environment_without_developer_shell(self):
+        if prerequisites.vs_installation() is None:
+            self.skipTest("Visual Studio is not installed")
+        clean = {k:v for k,v in os.environ.items() if not k.upper().startswith("VSCMD")
+                 and k.upper() not in ("INCLUDE", "LIB", "LIBPATH", "VCINSTALLDIR")}
+        with patch.dict(os.environ, clean, clear=True):
+            env = prerequisites.build_environment()
+        self.assertTrue(env.get("INCLUDE"))
+        self.assertTrue(env.get("LIB"))
+
     def test_installer_has_explicit_fixed_package_id_and_cpp_components(self):
         args = prerequisites.installer_command("visual-studio")
         self.assertIn("Microsoft.VisualStudio.2022.BuildTools", args)

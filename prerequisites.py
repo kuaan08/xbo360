@@ -36,8 +36,9 @@ def build_environment():
         batch = vs / "VC/Auxiliary/Build/vcvars64.bat"
         # This is a discovered installation path, not arbitrary user command text.
         if batch.is_file() and not any(c in str(batch) for c in ('"', '&', '|', '%', '\n')):
-            result = subprocess.run(["cmd.exe", "/d", "/s", "/c",
-                                     f'""{batch}" >nul && set"'], capture_output=True,
+            cmd = Path(os.environ.get("SystemRoot", "C:/Windows")) / "System32/cmd.exe"
+            command = f'"{cmd}" /d /s /c ""{batch}" >nul && set"'
+            result = subprocess.run(command, shell=False, capture_output=True,
                                     text=True, errors="replace", timeout=45)
             if result.returncode:
                 raise RuntimeError("Visual Studio environment initialization failed.")
@@ -89,7 +90,7 @@ def installer_command(tool):
     if tool not in PACKAGES:
         raise ValueError("Unknown prerequisite")
     args = ["winget", "install", "--id", PACKAGES[tool], "--exact", "--interactive",
-            "--accept-source-agreements"]
+            "--accept-source-agreements", "--accept-package-agreements"]
     if tool == "visual-studio":
         args += ["--override", "--wait --norestart --add Microsoft.VisualStudio.Workload.VCTools "
                  + " ".join("--add " + c for c in VS_COMPONENTS[1:]) + " --includeRecommended"]

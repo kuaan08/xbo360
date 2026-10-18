@@ -29,7 +29,9 @@ def latest(directory):
 def tools(sdk=None):
     import android_tools
     sdk = Path(sdk or os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT") or android_tools.SDK).resolve()
-    bt = latest(sdk / "build-tools")
+    bt = sdk / "build-tools/35.0.0"
+    if not bt.is_dir():
+        bt = latest(sdk / "build-tools")
     android = sdk / "platforms/android-35/android.jar"
     if not bt or not android.is_file():
         raise ValueError("Install Android SDK platform 35 and build-tools 35, or choose the SDK folder in Settings.")
@@ -154,10 +156,13 @@ def package(work, metadata, libs, sdl_java, android_sdk):
         sources += [HERE / "android/GameActivity.java"] + list(sdl_java.glob("*.java"))
     cmd([t["javac"], "-encoding", "UTF-8", "-source", "8", "-target", "8", "-classpath", t["android"], "-d", classes, *sources])
     class_files = sorted(classes.rglob("*.class"))
-    # Keep the command below Windows' argument limit even with SDL's classes.
-    argfile = work / "d8.args"
-    argfile.write_text("\n".join('"' + str(p).replace("\\", "/") + '"' for p in class_files))
-    cmd([t["java"], "-cp", t["d8"], "com.android.tools.r8.D8", "--min-api", "33", "--lib", t["android"], "--output", dex, "@" + str(argfile)])
+    # A single JAR avoids Windows' argument-length limit and D8 response-file
+    # quoting differences, including paths with spaces and '$' inner classes.
+    class_jar = work / "launcher.jar"
+    with zipfile.ZipFile(class_jar, "w") as jar:
+        for p in class_files:
+            jar.write(p, p.relative_to(classes).as_posix())
+    cmd([t["java"], "-cp", t["d8"], "com.android.tools.r8.D8", "--min-api", "33", "--lib", t["android"], "--output", dex, class_jar])
     game_activity = ('<activity android:name="org.xbo360.app.GameActivity" android:exported="false" android:process=":game" android:hardwareAccelerated="true" android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|screenLayout|uiMode|navigation|density"/>' if libs else '')
     manifest = work / "AndroidManifest.xml"
     manifest.write_text(f'''<manifest xmlns:android="http://schemas.android.com/apk/res/android" package={quoteattr(metadata['package'])} android:versionCode="200" android:versionName="0.2.0">
