@@ -165,6 +165,33 @@ tested Vulkan dependencies. Loading a Windows Direct3D 12 build with
 `--xbo_renderer vulkan` produces a clear "not compiled" error; an
 application update alone does not add Vulkan or make games compatible.
 
+## Android APK export fails before codegen: Ninja not detected on Windows
+
+If the Android export log stops after `Building matching Android SDK host code generator...` with
+`CMAKE_MAKE_PROGRAM is not set`, the Android host CMake configuration could not find the
+**Ninja build tool**. This is unrelated to the game's PowerPC manifest, Android NDK output,
+or missing game data.
+
+Xbox360Recomp **v0.3.8** resolves and validates the Ninja executable before cloning Android
+submodules, then passes its absolute path to **both** the host codegen CMake configuration
+and the Android ARM64/NDK CMake configuration. This works even when Visual Studio or WinGet
+installed Ninja outside of the process PATH. The fix also avoids the earlier
+Windows Ninja reconfiguration loop.
+
+If Ninja is genuinely missing, open **Settings → Install / detect prerequisites →
+Install Ninja** or run:
+
+```powershell
+winget install --id Ninja-build.Ninja --exact
+```
+
+Restart Xbox360Recomp and check the toolchain again. After updating the application,
+open **Library → Export APK** for your existing project. The process may now proceed
+to a different native compiler error; only a successful signed `.apk` generation proves
+export completed, and it does not guarantee that a retail game runs on an Android device.
+Do not erase the extracted game's files, alter a working TOML or rebuild the Windows EXE
+to fix this Ninja lookup.
+
 ## Native executable opens black then crashes: runtime analysis
 
 Successful Windows compilation only confirms that ReXGlue generated and linked native C++.
