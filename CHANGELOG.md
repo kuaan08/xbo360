@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.3
+
+- Fix repeated `[0/N] Re-running CMake...` followed by Ninja `manifest 'build.ninja' still dirty after 100 tries` on Windows projects. Each workbench build already invokes ReXGlue codegen and CMake configure explicitly, so the wrapper now configures Ninja with `CMAKE_SUPPRESS_REGENERATION=ON`, avoiding unnecessary build-time regeneration.
+- Add automated CMake/Ninja regression coverage with a future-dated CMake source file. The test checks that a build.ninja regeneration rule is not generated.
+- Preserve existing source manifests, generated PowerPC-to-C++ files, and original game assets. No removal of project or Ninja build directories is needed for the fix.
+- Note that native compilation and commercial game compatibility remain unverified for Rise of the Tomb Raider.
+
 ## 0.3.2
 
 - Diagnose MSVC/Windows SDK linker setup before generating C++ or running CMake, avoiding misleading `kernel32.lib` / `msvcrtd.lib` CMake failures.
