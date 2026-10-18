@@ -295,6 +295,14 @@ def codegen(root: Path, sdk: Path | None = None, force: bool = False) -> dict:
             print("WARNING: Force skips analysis validation but does not repair code.", flush=True)
         run(command, root, root / "build.log")
     except BaseException:
+        try:
+            from analysis_hints import diagnose
+            for branch in diagnose(root)["unresolved_branches"][:16]:
+                print(f"Unresolved branch: {branch['source']} -> {branch['target']}. "
+                      "Use Library > Function hints for a reviewed boundary; Force is optional.",
+                      flush=True)
+        except (ValueError, KeyError, OSError):
+            pass
         state["status"] = "codegen_failed"
         write_json(root / PROJECT_FILE, state)
         raise
@@ -426,6 +434,13 @@ def main(argv=None) -> int:
     compile_cmd.add_argument("--generate-only", action="store_true")
     compile_cmd.add_argument("--force", action="store_true", help="Generate despite analysis errors (experimental)")
     compile_cmd.add_argument("--jobs", type=int, default=0)
+    diagnose_cmd = commands.add_parser("diagnose", help="Inspect the last analysis errors for a prepared project")
+    diagnose_cmd.add_argument("project", type=Path)
+    hint_cmd = commands.add_parser("function-hint", help="Record a manually verified function boundary")
+    hint_cmd.add_argument("project", type=Path)
+    hint_cmd.add_argument("--address", required=True, help="0xXXXXXXXX entry point from disassembly")
+    hint_cmd.add_argument("--size", required=True, type=int, help="Verified function size in bytes")
+    hint_cmd.add_argument("--parent", type=lambda x: int(x, 0), help="Optional parent for discontiguous function chunk")
     play = commands.add_parser("run")
     play.add_argument("project", type=Path)
     play.add_argument("--renderer", choices=["any", "d3d12", "vulkan"])
@@ -458,6 +473,12 @@ def main(argv=None) -> int:
             import android_build
             android_build.export(args.project, args.sdk_source, args.ndk, args.android_sdk,
                                  args.runtime, args.jobs)
+        elif args.command == "diagnose":
+            from analysis_hints import diagnose
+            print(json.dumps(diagnose(args.project), indent=2))
+        elif args.command == "function-hint":
+            from analysis_hints import save_hint
+            print(json.dumps(save_hint(args.project, args.address, args.size, args.parent), indent=2))
         elif args.command == "install-sdk":
             install_sdk(sdk)
         elif args.command == "inspect":
