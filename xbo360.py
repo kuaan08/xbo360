@@ -25,7 +25,7 @@ import zipfile
 # application modules are trusted payload files, not modules from the CWD.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-VERSION = "0.3.6"
+VERSION = "0.3.7"
 SDK_VERSION = "0.10.0"
 SDK_COMMIT = "f5337cdc947ff6d4c4196737e2c807a48f2a1fc2"
 SDK_HASHES = {
@@ -481,6 +481,8 @@ def main(argv=None) -> int:
     compile_cmd.add_argument("--jobs", type=int, default=0)
     known_cmd = commands.add_parser("suggest-hints", help="Suggest verified function boundaries for an exact XEX checksum")
     known_cmd.add_argument("project", type=Path)
+    helper_cmd = commands.add_parser("bug-assistant", help="Local, read-only crash analysis and diagnostic advice")
+    helper_cmd.add_argument("project", type=Path)
     runtime_cmd = commands.add_parser("diagnose-runtime", help="Inspect crash log: fatal indirect calls, physical heap and file paths")
     runtime_cmd.add_argument("log", type=Path)
     runtime_cmd.add_argument("--project", type=Path, help="Optional prepared project to check missing disc files")
@@ -547,6 +549,9 @@ def main(argv=None) -> int:
         elif args.command == "suggest-hints":
             from analysis_hints import suggest_hints
             print(json.dumps(suggest_hints(args.project), indent=2))
+        elif args.command == "bug-assistant":
+            from bug_assistant import scan_report
+            print(json.dumps(scan_report(args.project), indent=2, ensure_ascii=False))
         elif args.command == "diagnose-runtime":
             from runtime_diagnostics import diagnose_runtime
             print(json.dumps(diagnose_runtime(args.log, args.project), indent=2))
