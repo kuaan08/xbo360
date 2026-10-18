@@ -739,6 +739,60 @@ impl App {
     }
 
     fn modals(&mut self, ctx: &egui::Context) {
+        if let Some(root) = self.hint_project.clone() {
+            let mut open = true;
+            egui::Window::new("Function hints / Analysis errors")
+                .open(&mut open).default_width(620.0).show(ctx, |ui| {
+                    ui.label("Unresolved branches are not necessarily calls: a PowerPC b can jump inside an existing function.");
+                    ui.colored_label(theme::WARNING, "Inspect the XEX disassembly first. Function sizes must be verified, never guessed from log addresses.");
+                    let logfile = Path::new(&root).join("build.log");
+                    match std::fs::read_to_string(logfile) {
+                        Ok(log) => {
+                            let errors = unresolved_calls(&log);
+                            if errors.is_empty() { ui.label("No unresolved branch in the saved build log."); }
+                            for (source, target) in errors {
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.monospace(format!("{source} -> {target}"));
+                                    if ui.button("Select target").clicked() {
+                                        self.hint_address = target;
+                                        self.hint_size.clear();
+                                    }
+                                });
+                            }
+                        }
+                        Err(_) => { ui.label("Run Generate C++ first to create a build log."); }
+                    }
+                    ui.separator();
+                    ui.label("Verified entrypoint address (0xXXXXXXXX)");
+                    ui.text_edit_singleline(&mut self.hint_address);
+                    ui.label("Verified function size (bytes, divisible by 4)");
+                    ui.text_edit_singleline(&mut self.hint_size);
+                    ui.label("Parent address for a discontiguous function chunk (optional)");
+                    ui.text_edit_singleline(&mut self.hint_parent);
+                    let parse_addr = |s: &str| s.strip_prefix("0x")
+                        .filter(|v| v.len() == 8 && v.chars().all(|c| c.is_ascii_hexdigit()))
+                        .and_then(|v| u32::from_str_radix(v, 16).ok())
+                        .filter(|v| v % 4 == 0);
+                    let address = parse_addr(self.hint_address.trim());
+                    let size = self.hint_size.trim().parse::<u32>().ok()
+                        .filter(|v| *v >= 4 && *v <= 1048576 && v % 4 == 0);
+                    let parent = if self.hint_parent.trim().is_empty() { Some(None) }
+                        else { parse_addr(self.hint_parent.trim()).map(Some) };
+                    if ui.add_enabled(self.job.is_none() && address.is_some() && size.is_some() && parent.is_some(),
+                                      egui::Button::new("Save verified boundary")).clicked() {
+                        let mut args = vec!["function-hint".to_owned(), root.clone(),
+                            "--address".into(), self.hint_address.clone(),
+                            "--size".into(), size.unwrap().to_string()];
+                        if let Some(Some(p)) = parent {
+                            args.extend(["--parent".into(), format!("0x{p:08X}")]);
+                        }
+                        self.start(ctx, args);
+                    }
+                    ui.label("This saves a dedicated project TOML include. Original game files are never changed.");
+                    ui.label("After saving, run Library > Generate C++; use Force only for diagnostics.");
+                });
+            if !open { self.hint_project = None; }
+        }
         if self.show_setup {
             let mut open = true;
             egui::Window::new("Install required build tools?").open(&mut open).collapsible(false).default_width(570.0).show(ctx, |ui| {
@@ -874,6 +928,32 @@ impl App {
                 self.edit_project = None;
             }
         }
+    }
+}
+
+fn unresolved_calls(log: &str) -> Vec<(String, String)> {
+    let mut found = Vec::new();
+    for line in log.lines() {
+        if !line.contains("target not in any function") { continue; }
+        let Some((target, suffix)) = line.trim().split_once(" from ") else { continue; };
+        let Some((source, _)) = suffix.split_once(':') else { continue; };
+        let valid = |v: &str| v.len() == 10 && v.starts_with("0x")
+            && v[2..].chars().all(|c| c.is_ascii_hexdigit());
+        if valid(source) && valid(target) {
+            let entry = (source.to_string(), target.to_string());
+            if !found.contains(&entry) { found.push(entry); }
+        }
+    }
+    found
+}
+
+#[cfg(test)]
+mod analysis_ui_tests {
+    use super::unresolved_calls;
+    #[test]
+    fn parses_original_unresolved_branch() {
+        let log = "0x82C21240 from 0x82C22B14: b 0x82C21240 from 0x82C22B14 - target not in any function";
+        assert_eq!(unresolved_calls(log), vec![("0x82C22B14".into(), "0x82C21240".into())]);
     }
 }
 
