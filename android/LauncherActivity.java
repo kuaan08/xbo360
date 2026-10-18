@@ -58,7 +58,7 @@ public final class LauncherActivity extends Activity {
             } catch (Exception e) { text("Unreadable library entry: " + root.getName(),13,Color.RED); }
         }
         button("Updates", () -> startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse("https://github.com/kuaan08/xbo360/releases/latest"))));
-        button("About / credits", () -> message("Xbox 360 Recomp 0.3.8\nFork: katakishi0 · hosted by kuaan08\nSwitchRecomp by MZ Labs\nReXGlue by Tom Clay and contributors\nAndroid runtime: AlanConstantino, Andrew Nakas, Buku313 and contributors\nNo commercial-game compatibility is established by the synthetic build tests."));
+        button("About / credits", () -> message("Xbox 360 Recomp 0.3.9\nFork: katakishi0 · hosted by kuaan08\nSwitchRecomp by MZ Labs\nReXGlue by Tom Clay and contributors\nAndroid runtime: AlanConstantino, Andrew Nakas, Buku313 and contributors\nNo commercial-game compatibility is established by the synthetic build tests."));
         if (metadata.optBoolean("native")) text("ARM64 · Android 13+ · Vulkan · physical gamepad recommended",13,0xff9ca5b2);
     }
 
