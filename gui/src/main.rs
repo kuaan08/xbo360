@@ -955,7 +955,7 @@ impl App {
     }
 
     fn about(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Xbox360Recomp 0.3.7");
+        ui.heading("Xbox360Recomp 0.3.8");
         ui.label("SwitchRecomp by MZ Labs — original interface foundation (Apache-2.0).");
         ui.label("Xbox 360 fork additions: katakishi0 · hosting: kuaan08.");
         ui.label("ReXGlue by Tom Clay and contributors, with Xenia and XenonRecomp research.");
