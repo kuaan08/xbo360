@@ -2,11 +2,28 @@
 import tempfile
 from pathlib import Path
 import unittest
+from unittest import mock
+import subprocess
 
 import prerequisites
 
 
 class WindowsLinkerTests(unittest.TestCase):
+    def test_ninja_discovery_validates_executable_and_ignores_broken_alias(self):
+        with tempfile.TemporaryDirectory() as td:
+            ninja = Path(td) / "ninja.exe"
+            ninja.write_bytes(b"mock ninja candidate")
+            env = {"PATH": td}
+            with mock.patch.object(prerequisites.shutil, "which", return_value=str(ninja)), \
+                 mock.patch.object(prerequisites.subprocess, "run", return_value=subprocess.CompletedProcess(
+                     args=[str(ninja), "--version"], returncode=0, stdout="1.12.1\\n")):
+                self.assertEqual(prerequisites.ninja_executable(env), ninja.resolve())
+            with mock.patch.object(prerequisites.shutil, "which", return_value=str(ninja)), \
+                 mock.patch.object(prerequisites.subprocess, "run", return_value=subprocess.CompletedProcess(
+                     args=[str(ninja), "--version"], returncode=1, stdout="", stderr="not executable")):
+                # Don't return the unusable candidate from PATH.
+                self.assertNotEqual(prerequisites.ninja_executable(env), ninja.resolve())
+
     def test_linker_requires_sdk_and_msvc_libraries(self):
         with tempfile.TemporaryDirectory() as location:
             sdk = Path(location) / "sdk"
