@@ -49,7 +49,7 @@ class HeaderTests(unittest.TestCase):
 
     def test_manifest_case_and_toml_escaping(self):
         root = Path(self.temp.name)
-        game = root / 'Game "Data"'
+        game = root / ('Game "Data"' if os.name != "nt" else "Game Data")
         exe = game / "Default.XEX"
         make_xex(exe)
         dll = game / "SubDir" / "Engine.DLL"
@@ -58,7 +58,8 @@ class HeaderTests(unittest.TestCase):
         project = root / "project"
         project.mkdir()
         manifest = project / "test.toml"
-        manifest.write_text('[project]\ngame_root="../game"\n[entrypoint]\nfile_path="../game/default.xex"\n[[modules]]\nfile_path=\'../game "data"/subdir/engine.dll\'\n')
+        dll_relative = os.path.relpath(dll, project).replace(os.sep, "/").lower()
+        manifest.write_text('[project]\ngame_root="../game"\n[entrypoint]\nfile_path="../game/default.xex"\n[[modules]]\nfile_path=' + json.dumps(dll_relative) + '\n')
         x.fix_manifest_paths(manifest, exe, game)
         import tomllib
         m = tomllib.loads(manifest.read_text())

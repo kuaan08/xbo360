@@ -342,7 +342,7 @@ def launch(root: Path, renderer: str = "any", fullscreen: bool = False) -> int:
     sdk = Path(state["sdk"])
     env["LD_LIBRARY_PATH"] = str(sdk / "lib") + os.pathsep + env.get("LD_LIBRARY_PATH", "")
     args = [str(exe), "--game_data_root", state["game_root"], "--gpu_plugin", "xenos",
-            "--xbo_renderer", renderer, "--fullscreen=" + str(fullscreen).lower()]
+            "--xbo_renderer", renderer, "--fullscreen" if fullscreen else "--no-fullscreen"]
     print("> " + subprocess.list2cmdline(args), flush=True)
     return subprocess.call(args, cwd=exe.parent, env=env)
 
