@@ -65,6 +65,32 @@ KNOWN_EXACT_BINARIES = {
             "evidence": ("PowerPC code ends with blr at 0x82C212AC; "
                          "next PDATA function begins at 0x82C212B0; "
                          "missing leaf function spans 0x82C21240..0x82C212B0."),
+        }, {
+            "address": "0x823E7708",
+            "size": 40,
+            "source_branch": "vtable 0x82003260",
+            "evidence": ("Exact XEX has a BE code pointer 0x823E7708 at 0x82003260; "
+                         "branch-through-CTR at 0x823E772C; next distinct vtable method at 0x823E7730; "
+                         "not listed in PDATA."),
+        }, {
+            "address": "0x823E7730",
+            "size": 40,
+            "source_branch": "vtable 0x82003264 / runtime FATAL",
+            "evidence": ("Runtime fatal target 0x823E7730 is a vtable method referenced from "
+                         "0x82003264, ends in bctr at 0x823E7754; next method begins "
+                         "0x823E7758; absent from PDATA."),
+        }, {
+            "address": "0x823E7758",
+            "size": 44,
+            "source_branch": "vtable 0x82003268",
+            "evidence": ("Vtable entry at 0x82003268; blr at 0x823E7780, "
+                         "padding at 0x823E7784; next PDATA function begins at 0x823E7788."),
+        }, {
+            "address": "0x823E7B78",
+            "size": 8,
+            "source_branch": "vtable 0x82003274",
+            "evidence": ("Vtable entry at 0x82003274, code is addi r3,r3,40 / blr; "
+                         "next PDATA function begins at 0x823E7B80."),
         }],
     },
 }
