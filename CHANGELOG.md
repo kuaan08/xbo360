@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.6
+
+- Add an **in-app Windows portable updater**: check GitHub releases automatically on startup, show new-version notification, download a release directly inside the app, and install/restart with one click. No manual browser navigation, ZIP extraction or copying of application files.
+- Add a separate, **opt-in unattended startup update** setting (automatically install/restart after a newer release is verified); enabled only on the user's choice. Automatic *checking* is enabled by default and can be disabled in Settings.
+- Preserve installed settings at `%LOCALAPPDATA%\\Xbox360Recomp\\settings.json` and game projects outside the application directory. Automatically stage the package beside the portable app, verify its published SHA-256 digest and required contents, then swap installation directories only after the GUI exits.
+- The detached Windows helper makes a same-volume installation backup and attempts rollback on failed directory moves. On disk-write or access problems, the user can check `%LOCALAPPDATA%\\Xbox360Recomp\\last-update-status.txt`. Installation to protected locations may require moving the portable folder to a user-writable directory.
+- Harden update ZIP extraction against traversal, case collisions, symlinks, oversize files and missing runtime files. Add offline regression tests for release archive validation.
+- Clarify graphics support: the **official ReXGlue 0.10.0 Windows SDK includes Direct3D 12 but excludes Vulkan by default**. Vulkan requires separately rebuilding the SDK and Xenos plugin with `REXGLUE_USE_VULKAN=ON`; it is **not** being falsely advertised as working in this Windows build.
+- Current Rise of the Tomb Raider native runtime incompatibilities (guest physical heap and function dispatch) remain unresolved; auto-updating the frontend does not fix them by itself.
+
 ## 0.3.5
 
 - Investigate an actual Windows native startup crash for the exact Rise of the Tomb Raider XEX (SHA-256 `9f718cac...e3ff021`), after successful codegen and native compilation. Direct3D 12 initialization succeeded but did not render gameplay.
