@@ -103,6 +103,16 @@ The Windows ZIP contains the frontend, Python, the desktop ReXGlue SDK, Android 
 
 The Updates button checks this repository's releases. Windows update downloads require the release asset's published SHA-256 and size. Extract the verified ZIP and replace the portable application after closing it; user settings live outside the application directory. Android's Updates button opens the same official release page for user-controlled installation.
 
+## CMake cannot find Ninja / CMAKE_MAKE_PROGRAM not set
+
+If CMake reports `CMake was unable to find a build program corresponding to "Ninja"`, the native build tool cannot be located. This is separate from the PowerPC codegen and from the previous Ninja regeneration loop.
+
+Xbox360Recomp 0.3.4 searches and executes `ninja --version` to validate the tool in the active Windows build environment, looking at PATH, the Visual Studio CMake/Ninja installation, CMake's install directory and WinGet's executable links. The CMake configure command receives a fully qualified, validated `-DCMAKE_MAKE_PROGRAM:FILEPATH=...`, even when the path contains spaces. Existing generated C++ and per-game function fixes are unaffected.
+
+If no Ninja works, open a Windows Terminal and run `winget install --id Ninja-build.Ninja --exact` (official package) or use the desktop **Settings → Install Ninja** option. Restart the app, select **Check toolchain**, then **Library → Build**. You can confirm availability using `where.exe ninja` and `ninja --version`. A missing Ninja binary cannot be repaired by editing `CMakeLists.txt` or enabling Force.
+
+The Windows build environment also requires MSVC C++ and Windows SDK libraries as documented below. Codegen passing does **not** guarantee the C++ compilation or game runtime will succeed.
+
 ## Ninja repeatedly re-runs CMake (100 times)
 
 If a project reports `ninja: error: manifest 'build.ninja' still dirty after 100 tries`, the problem is the native CMake/Ninja build-system regeneration, not an unresolved guest PPC call. The build log may show a successful `Codegen summary: 421 written` followed by repeated `[0/N] Re-running CMake...`.
