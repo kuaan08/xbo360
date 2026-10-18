@@ -25,7 +25,7 @@ import zipfile
 # application modules are trusted payload files, not modules from the CWD.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 SDK_VERSION = "0.10.0"
 SDK_COMMIT = "f5337cdc947ff6d4c4196737e2c807a48f2a1fc2"
 SDK_HASHES = {
@@ -434,6 +434,8 @@ def main(argv=None) -> int:
     compile_cmd.add_argument("--generate-only", action="store_true")
     compile_cmd.add_argument("--force", action="store_true", help="Generate despite analysis errors (experimental)")
     compile_cmd.add_argument("--jobs", type=int, default=0)
+    known_cmd = commands.add_parser("suggest-hints", help="Suggest verified function boundaries for an exact XEX checksum")
+    known_cmd.add_argument("project", type=Path)
     diagnose_cmd = commands.add_parser("diagnose", help="Inspect the last analysis errors for a prepared project")
     diagnose_cmd.add_argument("project", type=Path)
     hint_cmd = commands.add_parser("function-hint", help="Record a manually verified function boundary")
@@ -473,6 +475,9 @@ def main(argv=None) -> int:
             import android_build
             android_build.export(args.project, args.sdk_source, args.ndk, args.android_sdk,
                                  args.runtime, args.jobs)
+        elif args.command == "suggest-hints":
+            from analysis_hints import suggest_hints
+            print(json.dumps(suggest_hints(args.project), indent=2))
         elif args.command == "diagnose":
             from analysis_hints import diagnose
             print(json.dumps(diagnose(args.project), indent=2))
