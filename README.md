@@ -103,6 +103,16 @@ The Windows ZIP contains the frontend, Python, the desktop ReXGlue SDK, Android 
 
 The Updates button checks this repository's releases. Windows update downloads require the release asset's published SHA-256 and size. Extract the verified ZIP and replace the portable application after closing it; user settings live outside the application directory. Android's Updates button opens the same official release page for user-controlled installation.
 
+## Ninja repeatedly re-runs CMake (100 times)
+
+If a project reports `ninja: error: manifest 'build.ninja' still dirty after 100 tries`, the problem is the native CMake/Ninja build-system regeneration, not an unresolved guest PPC call. The build log may show a successful `Codegen summary: 421 written` followed by repeated `[0/N] Re-running CMake...`.
+
+The workbench runs ReXGlue codegen and CMake configuration explicitly **on every Build**. Since CMake configuration is already up to date before Ninja runs, Xbox360Recomp 0.3.3 passes `-DCMAKE_SUPPRESS_REGENERATION=ON` to the configure step; this removes Ninja's redundant regeneration rule while allowing its normal source compilation. CMake [documents the behavior](https://cmake.org/cmake/help/latest/variable/CMAKE_SUPPRESS_REGENERATION.html).
+
+Open the same existing project in Library and click Build with the updated Windows app. Your generated C++, manifest, game files and function hints are retained. The app still reconfigures on the next invocation if the source list or settings change.
+
+For older portable builds, add `set(CMAKE_SUPPRESS_REGENERATION ON)` at the **end** of the project's top-level `CMakeLists.txt`, after `rexglue_setup_target(...)`, then retry Library → Build. Back up the file first. This temporary workaround disables automatic Ninja CMake checks; if you manually edit `CMakeLists.txt` or `sources.cmake` you must run CMake configure again. Future-dated file timestamps are a known possible cause, but this user's log alone does not establish the exact triggering dependency. Avoid deleting the `generated` directory or reinitializing the project.
+
 ## Windows compiler links fail: kernel32.lib / msvcrtd.lib
 
 If ReXGlue codegen succeeds but CMake reports `lld-link: error: could not open 'kernel32.lib'` (or `msvcrtd.lib`, `oldnames.lib`), the guest PowerPC analysis is no longer the blocker. The Windows native linker is missing its **Windows SDK and/or MSVC library paths**. Clang, CMake and Ninja being present is insufficient.
