@@ -105,6 +105,9 @@ The Updates button checks this repository's releases. Windows update downloads r
 
 ## Fixing unresolved analysis branches
 
+For the exact tested *Rise of the Tomb Raider* XEX revision, a [detailed disassembly and PDATA analysis](docs/RISE_TOMB_RAIDER_ANALYSIS.md) establishes a missing 112-byte function at `0x82C21240`. **Library → Function hints → Check verified hints for this XEX** checks the original executable's SHA-256 and offers a verified suggestion only for that revision. You must explicitly select and save the hint. Other revisions receive no guessed sizes. CLI: `python xbo360.py suggest-hints "D:\\Ports\\my_game"`. Successful C++ generation and gameplay remain unconfirmed.
+
+
 Some games reach the ReXGlue `Validate` phase and stop with an unresolved branch target, e.g. the reported `0x82C21240 from 0x82C22B14: b 0x82C21240`. In PowerPC a `b` can be a jump into an existing function or a tail call. **The log does not establish a valid function size.**
 
 The **Library → Function hints** window shows unresolved branches from the project's `build.log`. You can select the target address, disassemble the corresponding game executable externally, enter the verified function size (in bytes, divisible by four) and optionally a parent address for an out-of-line function chunk. The application creates `xbo360-function-hints.toml`, adds the file to `[entrypoint].includes`, and leaves the original game intact. Existing projects can be regenerated without initializing over their directories.
