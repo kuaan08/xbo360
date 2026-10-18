@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.2
+
+- Diagnose MSVC/Windows SDK linker setup before generating C++ or running CMake, avoiding misleading `kernel32.lib` / `msvcrtd.lib` CMake failures.
+- Load the Visual Studio `vcvars64.bat` environment when available, including Windows SDK and VC library paths, or preserve an already initialized developer shell.
+- Verify the actual library files referenced by the `LIB` environment variable; Clang, CMake and Ninja alone no longer imply a ready Windows toolchain.
+- Include missing library names and setup guidance in the desktop setup window and the command-line doctor.
+- Add a regression test for Windows SDK and MSVC library lookup.
+- Keep existing prepared projects and manually verified ReXGlue function hints unchanged.
+
+
 ## 0.3.1
 
 - Inspect a supplied Rise of the Tomb Raider XEX and confirm a missing PowerPC leaf function at `0x82C21240` with a 112-byte extent, based on disassembly and adjacent PDATA entries.
