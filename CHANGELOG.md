@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0
+
+- Add a persistent, opt-in Force checkbox in the Recompile page and Settings. It reaches the desktop codegen process via the real ReXGlue global `--force` flag; ordinary builds still validate normally.
+- Identify `UnresolvedCall` branches in existing project logs, including original source and target addresses. A branch alone does not prove a function boundary.
+- Add **Library → Function hints** for reviewed function addresses and explicit sizes in bytes, plus an optional parent for a discontiguous code chunk.
+- Write manual hints to `xbo360-function-hints.toml` and include it in the project manifest, without rewriting original XEX or assets.
+- Add `diagnose` and `function-hint` CLI commands, regression tests and safety warnings. No commercial-game compatibility is implied.
+
+
 ## 0.2.0
 
 - Restore the original-style Recompile/Library/About interface, fixed form, result card, console, status bar, recent inputs and drag/drop.
