@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.8
+
+- Fix **Android ARM64 per-game APK export on Windows** failing during matching host-codegen CMake configuration with `CMake was unable to find a build program corresponding to "Ninja"` / `CMAKE_MAKE_PROGRAM is not set`.
+- Reuse the existing validated Ninja executable discovery (PATH, Visual Studio CMake tools and WinGet) for Android **host code generator and Android NDK** CMake configure calls. Pass an explicit absolute `-DCMAKE_MAKE_PROGRAM:FILEPATH=...` in both, including paths containing spaces.
+- Suppress redundant Ninja regeneration loops; CMake is explicitly configured before building. Diagnose missing Ninja **before** updating large Android runtime submodules; recommend `Settings > Install Ninja` or `winget install --id Ninja-build.Ninja --exact` then restart the app.
+- Add offline regression tests ensuring both CMake stages receive verified Ninja settings and broken/missing Ninja fails with a clear message.
+- The host configuration error is addressed; successful ARM64 compilation and runtime boot for a retail Xbox 360 title still require device-specific testing, and other errors can surface later.
+
 ## 0.3.7
 
 - Introduce the **Experimental Bug Assistant** in the Rust desktop frontend and an offline CLI. It scans recent per-game runtime logs and build metadata, classifies fatal PowerPC indirect calls, physical heap errors, missing guest assets, unavailable Vulkan, and crash history. All fixes remain manual and evidence-based; no personal logs or game files are transmitted to an AI service. Copyable summaries deliberately exclude full local paths.
