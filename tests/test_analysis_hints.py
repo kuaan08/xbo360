@@ -27,7 +27,7 @@ class AnalysisTests(unittest.TestCase):
             encoding="utf-8",
         )
         (self.root / "xbo360-project.json").write_text(
-            json.dumps({"name": "my_game", "manifest": self.manifest.name,
+            json.dumps({"schema": 1, "sdk_version": xbo360.SDK_VERSION, "name": "my_game", "manifest": self.manifest.name,
                         "sdk": str(self.root), "status": "codegen_failed"}),
             encoding="utf-8",
         )
