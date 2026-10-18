@@ -103,6 +103,33 @@ The Windows ZIP contains the frontend, Python, the desktop ReXGlue SDK, Android 
 
 The Updates button checks this repository's releases. Windows update downloads require the release asset's published SHA-256 and size. Extract the verified ZIP and replace the portable application after closing it; user settings live outside the application directory. Android's Updates button opens the same official release page for user-controlled installation.
 
+## Native executable opens black then crashes: runtime analysis
+
+Successful Windows compilation only confirms that ReXGlue generated and linked native C++.
+A title may still crash due to unregistered PowerPC function pointers, virtual/physical
+guest-memory errors, missing game resources or unsupported kernel/GPU features.
+
+The [Rise of the Tomb Raider case study](docs/RISE_TOMB_RAIDER_ANALYSIS.md)
+documents one **exact executable revision**, including a fatal indirect call to
+`0x823E7730`. Disassembly of the user-supplied XEX identified four additional
+vtable-referenced method entries absent from PDATA. Xbox360Recomp v0.3.5 offers their
+verified lengths in Library → Function hints, only if the original XEX's SHA-256
+matches, and only after the user's explicit selection and save. The suggested
+lengths are not blanket patches for other games.
+
+Runtime logs can be analyzed without modifying a project:
+
+```powershell
+python xbo360.py diagnose-runtime "C:\\Path\\To\\my_game_001.log" --project "C:\\Path\\To\\artifacts"
+```
+
+This reports unknown indirect-call addresses, allocation-error counts and missing
+`D:\\` files mapped to the project's `game_root`. A missing update mount may
+be optional and a failing physical heap allocation may be a bad range or
+fragmentation rather than low host RAM. Neither Force mode nor a different GPU
+backend fixes an unregistered function by itself. The current build still has
+no demonstrated full gameplay compatibility with this retail title.
+
 ## CMake cannot find Ninja / CMAKE_MAKE_PROGRAM not set
 
 If CMake reports `CMake was unable to find a build program corresponding to "Ninja"`, the native build tool cannot be located. This is separate from the PowerPC codegen and from the previous Ninja regeneration loop.
