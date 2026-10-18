@@ -25,7 +25,7 @@ import zipfile
 # application modules are trusted payload files, not modules from the CWD.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-VERSION = "0.3.3"
+VERSION = "0.3.4"
 SDK_VERSION = "0.10.0"
 SDK_COMMIT = "f5337cdc947ff6d4c4196737e2c807a48f2a1fc2"
 SDK_HASHES = {
@@ -311,7 +311,7 @@ def codegen(root: Path, sdk: Path | None = None, force: bool = False) -> dict:
     return state
 
 
-def cmake_configure_args(preset: str, sdk: Path) -> list[str]:
+def cmake_configure_args(preset: str, sdk: Path, ninja: Path | None = None) -> list[str]:
     """Every workbench build does codegen and a fresh CMake configure first.
 
     ReXGlue-generated sources.cmake and other CMake inputs can have timestamps
@@ -319,9 +319,14 @@ def cmake_configure_args(preset: str, sdk: Path) -> list[str]:
     Because xbo360 always runs CMake configure explicitly, automatic Ninja
     regeneration is both redundant and susceptible to that loop.
     """
-    return ["cmake", "--preset", preset,
+    args = ["cmake", "--preset", preset,
             f"-DCMAKE_PREFIX_PATH={sdk.as_posix()}",
             "-DCMAKE_SUPPRESS_REGENERATION=ON"]
+    if ninja is not None:
+        # CMake caches CMAKE_MAKE_PROGRAM; pass an absolute, checked path
+        # rather than relying on a changed PATH after vcvars64.bat.
+        args.append(f"-DCMAKE_MAKE_PROGRAM:FILEPATH={ninja.as_posix()}")
+    return args
 
 
 def build(root: Path, sdk: Path | None = None, jobs: int = 0,
@@ -333,8 +338,17 @@ def build(root: Path, sdk: Path | None = None, jobs: int = 0,
     import prerequisites
     # Fail with a precise SDK/MSVC diagnosis before expensive codegen/CMake.
     env = prerequisites.build_environment(require_windows_linker=os.name == "nt")
-    if not shutil.which("cmake", path=env.get("PATH")) or not shutil.which("ninja", path=env.get("PATH")):
-        raise RecompError("CMake 3.25+ and Ninja must be on PATH. Windows also requires Visual Studio C++ and Clang 20+.")
+    cmake = shutil.which("cmake", path=env.get("PATH"))
+    ninja = prerequisites.ninja_executable(env)
+    if not cmake:
+        raise RecompError("CMake 3.25+ is missing. Install Kitware.CMake and restart Xbox360Recomp.")
+    if not ninja:
+        raise RecompError(
+            "Ninja executable was not found or does not run. "
+            "Use Settings > Install Ninja or run: "
+            "winget install --id Ninja-build.Ninja --exact. "
+            "Then restart the application and check the toolchain."
+        )
     # Run explicit codegen before configure so generated source lists exist.
     state = codegen(root, sdk, force=force)
     preset = host_platform() + "-" + configuration.lower()
@@ -344,7 +358,8 @@ def build(root: Path, sdk: Path | None = None, jobs: int = 0,
     print("Compiling with CMake and Clang...", flush=True)
     try:
         print("CMake: configuring explicit codegen sources; disabling redundant Ninja regeneration.", flush=True)
-        run(cmake_configure_args(preset, sdk), root, root / "build.log", env)
+        print(f"Ninja build tool: {ninja}", flush=True)
+        run(cmake_configure_args(preset, sdk, ninja), root, root / "build.log", env)
         args = ["cmake", "--build", "--preset", preset, "--parallel", str(jobs or os.cpu_count() or 1)]
         run(args, root, root / "build.log", env)
         binary_dir = root / "out" / "build" / preset
