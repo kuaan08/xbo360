@@ -91,6 +91,24 @@ class AnalysisTests(unittest.TestCase):
             xex.write_bytes(b"XEX2" + bytes(range(31)))
             self.assertFalse(analysis_hints.suggest_hints(self.root)["matching_revision"])
 
+    def test_rise_of_tomb_raider_runtime_hints_are_exact_byte_boundaries(self):
+        exact = analysis_hints.KNOWN_EXACT_BINARIES[
+            "9f718cac4cc7fb33ec7204e90d0901387f81e18c953eb1f90c40be5e2e3ff021"
+        ]
+        sizes = {entry["address"]: entry["size"] for entry in exact["hints"]}
+        self.assertEqual(sizes, {
+            "0x82C21240": 112,
+            "0x823E7708": 40,
+            "0x823E7730": 40,
+            "0x823E7758": 44,
+            "0x823E7B78": 8,
+        })
+        self.assertEqual(len(exact["hints"]), len(sizes))
+        for address, size in sizes.items():
+            with self.subTest(address=address):
+                self.assertEqual(int(address, 16) % 4, 0)
+                self.assertEqual(size % 4, 0)
+
     def test_force_is_a_rexglue_global_argument(self):
         captured = []
         with mock.patch.object(xbo360, "check_sdk", return_value=self.root / "rexglue"), \
