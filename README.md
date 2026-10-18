@@ -20,6 +20,7 @@ This table describes code present in the fork, not a list of games confirmed pla
 | Input | XEX2 files, extracted folders and XDVDFS ISO/XISO, including XGD1/2/3 partition offsets | Compressed, split, GOD/STFS and automatic title-update merging are not implemented |
 | Verification | Structural XEX inspection; bounded ISO table/path checks; SDK version and download digest checks | Structural checks do not prove gameplay compatibility |
 | Desktop UI | Original-style top navigation, Recompile/Library/About tabs, left form, status/run cards, console, copy/save logs, recent files, drag/drop and settings dialogs | Nintendo-specific options are replaced with Xbox 360 controls |
+| Portable auto-updater | Startup release checks, SHA-verified in-app download, opt-in automatic installation and Windows restart/swap with rollback | Portable Windows package only; filesystem permissions and process handles may prevent installation |
 | Tool setup | Startup tool detection, missing-tool prompt, official interactive Windows installers and automatic Visual Studio environment loading | The user must approve installation; administrator/installer dialogs remain external |
 | Graphics | Desktop SDK Xenos plugin with Direct3D 12 or Vulkan when built into the selected SDK; Android fork Vulkan path | Backend availability and rendering correctness require title/device tests |
 | Audio/input | ReXGlue runtime audio and gamepad support; Android SDL lifecycle and controller integration | Android touchscreen gamepad controls are not implemented in this fork |
@@ -102,6 +103,41 @@ Generated projects preserve their CMake/Ninja build directories. Android exports
 The Windows ZIP contains the frontend, Python, the desktop ReXGlue SDK, Android exporter sources and documentation. The Android library APK contains the import/menu implementation. Neither package includes a commercial title. Native APKs exported locally are specific to the chosen executable/version.
 
 The Updates button checks this repository's releases. Windows update downloads require the release asset's published SHA-256 and size. Extract the verified ZIP and replace the portable application after closing it; user settings live outside the application directory. Android's Updates button opens the same official release page for user-controlled installation.
+
+## Automatic Windows application updates
+
+Starting with **v0.3.6**, the desktop frontend checks the latest
+[releases](https://github.com/kuaan08/xbo360/releases) automatically on startup.
+When a newer portable Windows package is available, the **Updates · NEW**
+control and an in-app dialog offer **Install verified update and restart**.
+The application downloads the ZIP itself, verifies the publisher's
+GitHub release asset SHA-256 digest, and validates expected executable,
+Python, script and SDK files. You do not need to open GitHub, manually
+unzip a release or overwrite the program yourself.
+
+For fully unattended updates, enable **Settings → Automatic updates →
+Automatically install verified updates and restart**. This option is
+**off by default** and requires explicit opt-in; update *checks* are on
+by default and can also be disabled.
+
+On Windows, the updater extracts into a separate sibling directory, then
+launches a detached PowerShell helper. Once the existing frontend exits,
+the helper backs up the previous portable directory, swaps the staged
+verified package into place and restarts `Xbox360Recomp.exe`. No game
+files or compiled projects are replaced; frontend settings remain in
+`%LOCALAPPDATA%\\Xbox360Recomp\\settings.json`. On failure, the old
+directory is preserved or restored where possible, and the helper writes
+`%LOCALAPPDATA%\\Xbox360Recomp\\last-update-status.txt` with its result.
+**Do not close the computer during installation.** Protected install
+paths (such as `Program Files`) require proper write permission; use a
+user-writable portable folder for best reliability.
+
+The updater deliberately does not silently modify the ReXGlue GPU backend:
+the official SDK **builds Windows D3D12 but not Vulkan by default**.
+Vulkan requires a distinct source build with `REXGLUE_USE_VULKAN=ON` and
+tested Vulkan dependencies. Loading a Windows Direct3D 12 build with
+`--xbo_renderer vulkan` produces a clear "not compiled" error; an
+application update alone does not add Vulkan or make games compatible.
 
 ## Native executable opens black then crashes: runtime analysis
 
