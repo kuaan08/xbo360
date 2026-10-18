@@ -37,10 +37,19 @@ jobs:
           $cache = "$env:LOCALAPPDATA\Xbox360Recomp\sdk-vulkan\0.10.0\source\out\build\win-amd64\CMakeCache.txt"
           python -c "from pathlib import Path; import vulkan_sdk; vulkan_sdk.validate_installed_sdk(Path(r'$prefix'), Path(r'$cache'))"
           Write-Host "Xenos SDK compiled both graphics backends. Game boot not yet validated."
+      - name: Stage portable Vulkan SDK for download
+        shell: pwsh
+        run: |
+          $source = "$env:LOCALAPPDATA\Xbox360Recomp\sdk-vulkan\0.10.0\install"
+          $destination = "dist/vulkan-win-amd64"
+          New-Item -ItemType Directory -Force -Path $destination | Out-Null
+          Copy-Item -Path "$source\*" -Destination $destination -Recurse -Force
+          if (!(Test-Path "$destination/bin/rexgpu-xenos.dll")) { throw "Vulkan plugin missing from staged artifact" }
+          Copy-Item "ci/licenses/ReXGlue-BSD-3-Clause.txt" "$destination/ReXGlue-LICENSE.txt"
       - name: Upload SDK as experimental CI artifact
         uses: actions/upload-artifact@v4
         with:
           name: ReXGlue-Vulkan-D3D12-Windows-experimental
-          path: ${{ env.LOCALAPPDATA }}\Xbox360Recomp\sdk-vulkan\0.10.0\install\
+          path: dist/vulkan-win-amd64/
           retention-days: 7
           if-no-files-found: error
