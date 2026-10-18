@@ -18,6 +18,13 @@ class CMakeRegenerationTests(unittest.TestCase):
         self.assertIn("-DCMAKE_SUPPRESS_REGENERATION=ON", args)
         self.assertTrue(any("CMAKE_PREFIX_PATH" in x for x in args))
 
+    def test_cmake_uses_verified_absolute_ninja_path_even_with_spaces(self):
+        ninja = Path("C:/Users/User/Microsoft WinGet/Ninja/ninja.exe")
+        args = xbo360.cmake_configure_args(
+            "win-amd64-release", Path("C:/Recomp SDK"), ninja)
+        self.assertIn("-DCMAKE_MAKE_PROGRAM:FILEPATH=C:/Users/User/Microsoft WinGet/Ninja/ninja.exe", args)
+        self.assertEqual(len([a for a in args if a.startswith("-DCMAKE_MAKE_PROGRAM")]), 1)
+
     @unittest.skipUnless(shutil.which("cmake") and shutil.which("ninja"), "CMake and Ninja required")
     def test_future_dated_cmake_source_does_not_generate_ninja_regen_rule(self):
         with tempfile.TemporaryDirectory(prefix="xbo360 future timestamp ") as td:
