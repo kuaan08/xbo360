@@ -468,6 +468,7 @@ def main(argv=None) -> int:
             return 0 if doctor(sdk or sdk_default()) else 1
         elif args.command in ("prepare", "recompile"):
             sdk = (sdk or sdk_default()).resolve()
+            check_sdk(sdk)  # fail before a potentially lengthy ISO extraction
             source = args.input
             game_root = args.game_root
             if source.suffix.lower() in (".iso", ".xiso"):

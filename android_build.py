@@ -77,6 +77,16 @@ def native_project(project, source, ndk, env, jobs, log):
     if jobs < 1:
         jobs = max(1, os.cpu_count() or 1)
     host_build = cache_root() / "android/host-tools"
+    host_build.parent.mkdir(parents=True, exist_ok=True)
+    host_options = host_build.parent / "host-options.cmake"
+    # The Android fork's standalone host preset omits the SIMD baseline used
+    # by downstream applications. Its memory.cpp uses SSSE3 unconditionally.
+    # Set the baseline on rexcore only; do not rebuild unrelated dependencies
+    # with a different CPU target or modify the pinned source checkout.
+    host_options.write_text('''if(CMAKE_SYSTEM_PROCESSOR MATCHES "AMD64|x86_64")
+  cmake_language(DEFER CALL target_compile_options rexcore PRIVATE -march=x86-64-v2)
+endif()
+''')
     cc = "clang" if os.name == "nt" else "clang-20"
     cxx = "clang++" if os.name == "nt" else "clang++-20"
     host_cli = source / "out" / ("win-amd64" if os.name == "nt" else "linux-amd64") / ("rexglue.exe" if os.name == "nt" else "rexglue")
@@ -84,7 +94,8 @@ def native_project(project, source, ndk, env, jobs, log):
         print("Building matching Android SDK host code generator...", flush=True)
         run(["cmake", "-S", str(source), "-B", str(host_build), "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
              f"-DCMAKE_C_COMPILER={cc}", f"-DCMAKE_CXX_COMPILER={cxx}", "-DREXGLUE_ENABLE_TRACY=OFF",
-             "-DREXGLUE_ENABLE_PERF_COUNTERS=OFF", "-DREXGLUE_ENABLE_FIDELITYFX=OFF"], HERE, log, env)
+             "-DREXGLUE_ENABLE_PERF_COUNTERS=OFF", "-DREXGLUE_ENABLE_FIDELITYFX=OFF",
+             f"-DCMAKE_PROJECT_ReXGlue_INCLUDE={host_options.as_posix()}"], HERE, log, env)
         run(["cmake", "--build", str(host_build), "--target", "rexglue", "--parallel", str(jobs)], HERE, log, env)
     work = project / "android-export"
     generated = work / "native"
@@ -144,7 +155,7 @@ rexglue_configure_target(xbo_game)
     return libs + runtime + [shared], source / "thirdparty/sdl3/android-project/app/src/main/java/org/libsdl/app"
 
 
-def package(work, metadata, libs, sdl_java, android_sdk):
+def package(work, metadata, libs, sdl_java, android_sdk, license_files=()):
     _, t = tools(android_sdk)
     work.mkdir(parents=True, exist_ok=True)
     log = work / "package.log"
@@ -185,6 +196,8 @@ def package(work, metadata, libs, sdl_java, android_sdk):
             z.write(lib, "lib/arm64-v8a/" + lib.name, compress_type=zipfile.ZIP_STORED)
         for p in [HERE / "LICENSE.txt", HERE / "NOTICE.txt", HERE / "ci/licenses/ReXGlue-BSD-3-Clause.txt"]:
             z.write(p, "assets/licenses/" + p.name)
+        for relative, p in license_files:
+            z.write(p, "assets/licenses/android-runtime/" + relative, compress_type=zipfile.ZIP_DEFLATED)
     cmd([t["zipalign"], "-P", "16", "-f", "4", unsigned, aligned])
     key = Path(os.environ.get("XBO_ANDROID_KEYSTORE", cache_root() / "android/debug.keystore"))
     if not key.is_file():
@@ -204,7 +217,7 @@ def export(project=None, source=None, ndk=None, sdk=None, runtime=False, jobs=2)
     work.mkdir(parents=True, exist_ok=True)
     metadata = {"title": "Xbox 360 Recomp", "name": "launcher", "package": "org.xbo360.launcher",
                 "native": False, "xex_path": "", "sha256": ""}
-    libs, java = [], None
+    libs, java, license_files = [], None, []
     if runtime:
         if project is None:
             raise ValueError("Native APK export requires a prepared project")
@@ -215,11 +228,15 @@ def export(project=None, source=None, ndk=None, sdk=None, runtime=False, jobs=2)
             raise ValueError("Install Android NDK r27c (27.2.12479018) or select its directory")
         source = ensure_source(source, env, work / "build.log")
         libs, java = native_project(project.resolve(), source, ndk, env, jobs, work / "build.log")
+        license_files = [(p.relative_to(source).as_posix(), p) for p in source.rglob("*")
+                         if p.is_file() and ".git" not in p.parts
+                         and p.name.upper().startswith(("LICENSE", "COPYING")) and p.stat().st_size < 1024 * 1024]
         xex = Path(state["xex"])
         metadata.update(title=state["name"], name=state["name"], package="org.xbo360.game." + state["name"],
                         native=True, xex_path=xex.relative_to(state["game_root"]).as_posix(),
-                        sha256=hashlib.sha256(xex.read_bytes()).hexdigest(), runtime_revision=ANDROID_REVISION)
-    output = package(work, metadata, libs, java, sdk)
+                        sha256=hashlib.sha256(xex.read_bytes()).hexdigest(), runtime_revision=ANDROID_REVISION,
+                        runtime_source=ANDROID_REPO)
+    output = package(work, metadata, libs, java, sdk, license_files)
     if project:
         write_json(work / "export.json", {"apk": str(output), "native": bool(libs), "metadata": metadata})
     return output

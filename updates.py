@@ -19,7 +19,8 @@ def release(current, platform_name):
     url = data.get("html_url", "")
     if not url.startswith(f"https://github.com/{REPOSITORY}/releases/tag/"):
         raise ValueError("Unexpected release repository")
-    desired = "Xbox360Recomp-Windows-x64.zip" if platform_name == "win-amd64" else "Xbox360Recomp-Android.apk"
+    desired = {"win-amd64": "Xbox360Recomp-Windows-x64.zip",
+               "android-arm64": "Xbox360Recomp-Android.apk"}.get(platform_name)
     asset = next((a for a in data.get("assets", []) if a.get("name") == desired), None)
     tag = data.get("tag_name", "")
     if not re.fullmatch(r"v?\d+\.\d+\.\d+(?:[-+.][A-Za-z0-9.-]+)?", tag):

@@ -8,6 +8,8 @@
 - Desktop and Android SDK runtime ABIs differ. Android uses a separately pinned fork and its matching code generator rather than reusing incompatible 0.10.0 generated files.
 - Importing an arbitrary ISO into an APK cannot produce native code for it. Per-title metadata contains the exported executable's hash; Android validates it before enabling/starting native execution.
 - The previous package script copied only the original Python entrypoint. It now includes all helper modules and Android sources, and smoke-checks packaged tool discovery.
+- The Android fork's standalone Linux host build omitted the SIMD baseline required by `memory.cpp`. A deferred CMake target option supplies x86-64-v2 for `rexcore` without altering the pinned source tree or changing the ARM64 build target.
+- Native APKs retain license files from the Android runtime and its vendored dependencies, along with the exact source revision.
 - Failed codegen/build continues to clear stale executable state. Update downloads enforce the repository, exact asset name, size and SHA-256 and remove failed partial downloads.
 
 ## Verification
