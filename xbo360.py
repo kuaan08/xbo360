@@ -281,7 +281,7 @@ def load_project(root: Path) -> dict:
     return state
 
 
-def codegen(root: Path, sdk: Path | None = None) -> dict:
+def codegen(root: Path, sdk: Path | None = None, force: bool = False) -> dict:
     root = root.resolve()
     state = load_project(root)
     sdk = (sdk or Path(state["sdk"])).resolve()
@@ -290,7 +290,10 @@ def codegen(root: Path, sdk: Path | None = None) -> dict:
     write_json(root / PROJECT_FILE, state)
     print("Translating PowerPC to C++...", flush=True)
     try:
-        run([str(exe), "codegen", str(root / state["manifest"])], root, root / "build.log")
+        command = [str(exe)] + (["--force"] if force else []) + ["codegen", str(root / state["manifest"])]
+        if force:
+            print("WARNING: Force skips analysis validation but does not repair code.", flush=True)
+        run(command, root, root / "build.log")
     except BaseException:
         state["status"] = "codegen_failed"
         write_json(root / PROJECT_FILE, state)
@@ -301,7 +304,7 @@ def codegen(root: Path, sdk: Path | None = None) -> dict:
 
 
 def build(root: Path, sdk: Path | None = None, jobs: int = 0,
-          configuration: str = "Release") -> dict:
+          configuration: str = "Release", force: bool = False) -> dict:
     root = root.resolve()
     state = load_project(root)
     sdk = (sdk or Path(state["sdk"])).resolve()
@@ -311,7 +314,7 @@ def build(root: Path, sdk: Path | None = None, jobs: int = 0,
     if not shutil.which("cmake", path=env.get("PATH")) or not shutil.which("ninja", path=env.get("PATH")):
         raise RecompError("CMake 3.25+ and Ninja must be on PATH. Windows also requires Visual Studio C++ and Clang 20+.")
     # Run explicit codegen before configure so generated source lists exist.
-    state = codegen(root, sdk)
+    state = codegen(root, sdk, force=force)
     preset = host_platform() + "-" + configuration.lower()
     env["PATH"] = str(sdk / "bin") + os.pathsep + env.get("PATH", "")
     state.update(status="building", executable=None)
@@ -415,11 +418,13 @@ def main(argv=None) -> int:
         p.add_argument("--no-scan-dll", action="store_true")
     for p in (commands.add_parser("codegen"), commands.add_parser("build")):
         p.add_argument("project", type=Path)
+        p.add_argument("--force", action="store_true", help="Generate despite analysis errors (experimental)")
         p.add_argument("--sdk", type=Path)
         if p.prog.endswith("build"):
             p.add_argument("--jobs", type=int, default=0)
             p.add_argument("--configuration", choices=["Release", "Debug", "RelWithDebInfo"], default="Release")
     compile_cmd.add_argument("--generate-only", action="store_true")
+    compile_cmd.add_argument("--force", action="store_true", help="Generate despite analysis errors (experimental)")
     compile_cmd.add_argument("--jobs", type=int, default=0)
     play = commands.add_parser("run")
     play.add_argument("project", type=Path)
@@ -484,16 +489,16 @@ def main(argv=None) -> int:
             prepare(source, args.project, args.name, sdk, game_root, not args.no_scan_dll)
             if args.command == "recompile":
                 if args.generate_only:
-                    codegen(args.project, sdk)
+                    codegen(args.project, sdk, force=args.force)
                 else:
-                    build(args.project, sdk, args.jobs)
+                    build(args.project, sdk, args.jobs, force=args.force)
             print(f"Project: {args.project.resolve()}", flush=True)
         elif args.command == "codegen":
-            codegen(args.project, sdk)
+            codegen(args.project, sdk, force=args.force)
         elif args.command == "build":
             if args.jobs < 0:
                 raise RecompError("Jobs cannot be negative.")
-            build(args.project, sdk, args.jobs, args.configuration)
+            build(args.project, sdk, args.jobs, args.configuration, force=args.force)
         elif args.command == "run":
             return launch(args.project, args.renderer, args.fullscreen)
     except (RecompError, RuntimeError, OSError, ValueError, KeyError, zipfile.BadZipFile) as exc:
