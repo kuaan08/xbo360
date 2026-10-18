@@ -81,10 +81,10 @@ def native_project(project, source, ndk, env, jobs, log):
     host_options = host_build.parent / "host-options.cmake"
     # The Android fork's standalone host preset omits the SIMD baseline used
     # by downstream applications. Its memory.cpp uses SSSE3 unconditionally.
-    # Set the baseline on rexcore only; do not rebuild unrelated dependencies
+    # Propagate the baseline from rexcore to SDK consumers; do not rebuild unrelated dependencies
     # with a different CPU target or modify the pinned source checkout.
     host_options.write_text('''if(CMAKE_SYSTEM_PROCESSOR MATCHES "AMD64|x86_64")
-  cmake_language(DEFER CALL target_compile_options rexcore PRIVATE -march=x86-64-v2)
+  cmake_language(DEFER CALL target_compile_options rexcore PUBLIC -march=x86-64-v2)
 endif()
 ''')
     cc = "clang" if os.name == "nt" else "clang-20"
