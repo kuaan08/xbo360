@@ -1,5 +1,6 @@
 """Regression tests for Force and per-title ReXGlue function boundaries."""
 import json
+import hashlib
 from pathlib import Path
 import tempfile
 import tomllib
@@ -68,6 +69,27 @@ class AnalysisTests(unittest.TestCase):
         analysis_hints.save_hint(self.root, "0x82C21240", 64)
         with self.assertRaises(ValueError):
             analysis_hints.save_hint(self.root, "0x82C21240", 128)
+
+    def test_exact_xex_hint_suggestion_requires_checksum_and_explicit_save(self):
+        xex = self.root / "default.xex"
+        xex.write_bytes(b"XEX2" + bytes(range(32)))
+        state_file = self.root / "xbo360-project.json"
+        state = json.loads(state_file.read_text(encoding="utf-8"))
+        state["xex"] = str(xex)
+        state_file.write_text(json.dumps(state), encoding="utf-8")
+        digest = hashlib.sha256(xex.read_bytes()).hexdigest()
+        self.assertFalse(analysis_hints.suggest_hints(self.root)["matching_revision"])
+        evidence = {"title": "Synthetic test", "hints": [
+            {"address": "0x82C21240", "size": 112, "evidence": "synthetic test only"}
+        ]}
+        with mock.patch.dict(analysis_hints.KNOWN_EXACT_BINARIES, {digest: evidence}):
+            report = analysis_hints.suggest_hints(self.root)
+            self.assertTrue(report["matching_revision"])
+            self.assertEqual(report["hints"][0]["size"], 112)
+            # Suggestions must not write a function hint without the user's approval.
+            self.assertFalse((self.root / analysis_hints.HINT_FILE).exists())
+            xex.write_bytes(b"XEX2" + bytes(range(31)))
+            self.assertFalse(analysis_hints.suggest_hints(self.root)["matching_revision"])
 
     def test_force_is_a_rexglue_global_argument(self):
         captured = []
