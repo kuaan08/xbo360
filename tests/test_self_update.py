@@ -57,6 +57,7 @@ class PortableUpdateTests(unittest.TestCase):
                 self.assertFalse(self.out.exists())
                 self.assertFalse((self.root / "outside.exe").exists())
 
+    @unittest.skipUnless(os.name == "nt", "ZipInfo path normalization on Windows")
     def test_backslash_normalized_safely_by_python_zipfile(self):
         # On Windows ZipInfo normalizes \\ to / even before validation,
         # converting a harmless nested path into an ordinary nested path.
