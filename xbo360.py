@@ -25,7 +25,7 @@ import zipfile
 # application modules are trusted payload files, not modules from the CWD.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-VERSION = "0.3.5"
+VERSION = "0.3.6"
 SDK_VERSION = "0.10.0"
 SDK_COMMIT = "f5337cdc947ff6d4c4196737e2c807a48f2a1fc2"
 SDK_HASHES = {
@@ -448,6 +448,9 @@ def main(argv=None) -> int:
     update = commands.add_parser("update", help="Check releases and optionally download a verified update")
     update.add_argument("--download", action="store_true")
     update.add_argument("--directory", type=Path)
+    update.add_argument("--install", action="store_true", help="Download and install portable Windows update, then restart")
+    update.add_argument("--parent-pid", type=int, help="Running GUI process ID (required for --install)")
+    update.add_argument("--app-dir", type=Path, help="Existing unpacked portable application folder")
     android = commands.add_parser("android", help="Export an Android launcher or per-title native APK")
     android.add_argument("--project", type=Path)
     android.add_argument("--sdk-source", type=Path)
@@ -512,7 +515,28 @@ def main(argv=None) -> int:
             import updates
             info = updates.release(VERSION, host_platform())
             print(json.dumps(info), flush=True)
-            if args.download and not info["current"]:
+            if args.install:
+                if args.download:
+                    raise RecompError("Use either --install or --download, not both.")
+                if info["current"]:
+                    raise RecompError("Already on the newest version.")
+                if not args.parent_pid or not args.app_dir:
+                    raise RecompError("Windows installation requires --parent-pid and --app-dir.")
+                app_dir = args.app_dir.resolve(strict=True)
+                if not (app_dir / "xbo360.py").samefile(Path(__file__).resolve()):
+                    raise RecompError("App directory must be the active Xbox360Recomp installation.")
+                workspace, stage, backup = updates.prepare_windows_install(
+                    info, app_dir, current_version=VERSION)
+                try:
+                    status = updates.launch_windows_swap(
+                        app_dir, workspace, stage, backup, parent_pid=args.parent_pid)
+                except BaseException:
+                    shutil.rmtree(workspace, ignore_errors=True)
+                    raise
+                print(f"Update {info['version']} verified and staged.", flush=True)
+                print(f"Updater will replace the application after it closes. Status: {status}", flush=True)
+                print("Close Xbox360Recomp to apply update and relaunch.", flush=True)
+            elif args.download and not info["current"]:
                 target = updates.download(info, args.directory or cache_root() / "updates" / info["version"])
                 print(f"Update downloaded and verified: {target}", flush=True)
                 print(f"Done: {target}", flush=True)
