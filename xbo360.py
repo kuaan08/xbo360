@@ -21,6 +21,10 @@ import tomllib
 import urllib.request
 import zipfile
 
+# The portable Windows Python distribution uses an isolated _pth. Its sibling
+# application modules are trusted payload files, not modules from the CWD.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 VERSION = "0.2.0"
 SDK_VERSION = "0.10.0"
 SDK_COMMIT = "f5337cdc947ff6d4c4196737e2c807a48f2a1fc2"

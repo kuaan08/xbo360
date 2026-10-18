@@ -43,4 +43,4 @@ No commercial executable was supplied for this adaptation, and no successful com
 
 ## Follow-up work
 
-Validate a user-selected title end to end; add per-title configuration editing and compatibility reports; package external compiler prerequisites more conveniently. ISO/STFS import and Android require separate implementations and tests.
+Validate a user-selected title end to end; add richer per-title configuration editing and compatibility reports. Version 0.2.0 adds ISO import, guided compiler setup and the separate Android path described above. STFS import and Android guest DLL packaging still require separate implementations and tests.

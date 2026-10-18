@@ -224,11 +224,13 @@ impl Progress {
             Some(Phase::Analyzing)
         } else if t.starts_with("Translating") {
             Some(Phase::Translating)
-        } else if t.starts_with("Copying romfs") {
+        } else if t.starts_with("Copying romfs") || t.starts_with("Extracting ISO:") {
             Some(Phase::Copying)
-        } else if t.starts_with("Compiling the runtime") {
+        } else if t.starts_with("Compiling the runtime")
+            || t.starts_with("Building matching Android")
+        {
             Some(Phase::Runtime)
-        } else if t.starts_with("Compiling with") {
+        } else if t.starts_with("Compiling with") || t.starts_with("Compiling Android") {
             Some(Phase::Compiling)
         } else if t.starts_with("Linking") {
             Some(Phase::Linking)

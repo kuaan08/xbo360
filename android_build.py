@@ -150,6 +150,9 @@ def package(work, metadata, libs, sdl_java, android_sdk):
     log = work / "package.log"
     cmd = lambda args: run([str(a) for a in args], HERE, log)
     classes, dex = work / "classes", work / "dex"
+    for directory in (classes, dex):
+        if directory.exists():
+            shutil.rmtree(directory)
     classes.mkdir(exist_ok=True); dex.mkdir(exist_ok=True)
     sources = [HERE / "android/LauncherActivity.java", HERE / "android/IsoReader.java"]
     if libs:
