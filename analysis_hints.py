@@ -91,6 +91,20 @@ KNOWN_EXACT_BINARIES = {
             "source_branch": "vtable 0x82003274",
             "evidence": ("Vtable entry at 0x82003274, code is addi r3,r3,40 / blr; "
                          "next PDATA function begins at 0x823E7B80."),
+        }, {
+            "address": "0x82286388",
+            "size": 20,
+            "source_branch": "table 0x82002EC4/0x820030B4/0x82003294",
+            "evidence": ("Three big-endian code pointers in exact XEX PE data; "
+                         "five PowerPC instructions with bctr at 0x82286398; "
+                         "padding at 0x8228639C; absent from PDATA."),
+        }, {
+            "address": "0x82286360",
+            "size": 40,
+            "source_branch": "table 0x820030BC / runtime FATAL",
+            "evidence": ("Code pointer at 0x820030BC; conditional branch into "
+                         "0x82286374; blr at 0x82286370 and bctr at "
+                         "0x82286384; next function 0x82286388."),
         }],
     },
 }
@@ -152,6 +166,15 @@ def save_hint(root, address, size, parent=None):
     entry = parsed.get("entrypoint")
     if not isinstance(entry, dict):
         raise ValueError("Missing [entrypoint].")
+    inline = entry.get("functions", {})
+    if isinstance(inline, dict) and address in inline:
+        current = inline[address]
+        expected = {"size": size} if parent is None else {"size": size, "parent": parent}
+        if current == expected:
+            return {"address": address, "size": size, "parent": parent,
+                    "manifest": str(manifest), "already_present": True,
+                    "message": "Already in [entrypoint.functions]; no duplicate include added."}
+        raise ValueError("A conflicting function is already in the main manifest.")
     includes = entry.get("includes", [])
     if not isinstance(includes, list) or any(not isinstance(x, str) for x in includes):
         raise ValueError("Invalid entrypoint.includes.")
