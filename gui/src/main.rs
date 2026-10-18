@@ -170,7 +170,12 @@ impl App {
         self.log.push(format!("> {}", cfg.display()));
         self.progress = Default::default();
         match job::Job::start(&cfg, ctx) {
-            Ok(j) => self.job = Some(j),
+            Ok(j) => {
+                self.job = Some(j);
+                // Always expose build/codegen/APK logs, including actions started
+                // from Library or Settings. Do not leave output behind another tab.
+                self.tab = 4;
+            },
             Err(e) => {
                 self.log.push(format!("Error: {e}"));
                 self.progress.phase = job::Phase::Failed;
@@ -579,6 +584,13 @@ impl eframe::App for App {
                             self.tab = i;
                         }
                     }
+                    // Output appears when a command begins and remains available
+                    // after completion until the user clears it.
+                    if (self.job.is_some() || !self.log.is_empty() || self.tab == 4)
+                        && ui.selectable_label(self.tab == 4, "Output").clicked()
+                    {
+                        self.tab = 4;
+                    }
                     let needs_update = self.update.as_ref().is_some_and(|v| v["current"] == false);
                     if ui
                         .add_enabled(self.update_rx.is_none(), egui::Button::new(
@@ -639,7 +651,8 @@ impl eframe::App for App {
         if self.tab == 0 {
             egui::Panel::left("form")
                 .resizable(true)
-                .default_size(380.0)
+                .default_size(370.0)
+                .size_range(300.0..=430.0)
                 .frame(
                     egui::Frame::new()
                         .fill(theme::PANEL)
@@ -654,7 +667,24 @@ impl eframe::App for App {
                 .frame(page_frame())
                 .show(ui, |ui| {
                     self.run_card(ui);
-                    ui.add_space(14.0);
+                    ui.add_space(12.0);
+                    // Keep the Recompile form stable; long build logs live in
+                    // their own full-width page, never behind the side panel.
+                    if !self.log.is_empty() {
+                        ui.label("Compilation output is available in the Output tab.");
+                        if ui.button("Open output").clicked() {
+                            self.tab = 4;
+                        }
+                    } else {
+                        ui.label("Output opens automatically when you start Prepare, Generate C++, Build or Export APK.");
+                    }
+                });
+        } else if self.tab == 4 {
+            egui::CentralPanel::default()
+                .frame(page_frame())
+                .show(ui, |ui| {
+                    self.run_card(ui);
+                    ui.add_space(10.0);
                     self.log_view(ui);
                 });
         } else {
@@ -914,6 +944,9 @@ impl App {
                 .clicked()
             {
                 self.log.clear();
+                if self.tab == 4 {
+                    self.tab = 0;
+                }
             }
             if ui.button("Save...").clicked()
                 && let Some(p) = rfd::FileDialog::new()
@@ -931,7 +964,9 @@ impl App {
             .corner_radius(10)
             .inner_margin(Margin::symmetric(12, 10))
             .show(ui, |ui| {
-                ui.set_min_size(ui.available_size());
+                // Never set min width to the dynamically measured log content:
+                // a long linker line can otherwise grow the layout every frame.
+                ui.set_min_height(ui.available_height().max(200.0));
                 let row = ui.text_style_height(&egui::TextStyle::Monospace);
                 egui::ScrollArea::both()
                     .auto_shrink([false, false])
