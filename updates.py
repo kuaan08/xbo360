@@ -134,7 +134,17 @@ try {
   }
 
   Report "Updated installation; launching"
-  Start-Process -FilePath (Join-Path $InstallDir 'Xbox360Recomp.exe') -WorkingDirectory $InstallDir
+  try {
+    Start-Process -FilePath (Join-Path $InstallDir 'Xbox360Recomp.exe') -WorkingDirectory $InstallDir
+  } catch {
+    # Startup launch failed. Put the old usable portable directory back.
+    $failedDir = "$InstallDir.failed"
+    if (-not (Test-Path -LiteralPath $failedDir)) {
+      [IO.Directory]::Move($InstallDir, $failedDir)
+      [IO.Directory]::Move($BackupDir, $InstallDir)
+    }
+    throw
+  }
   # Cleanup failure does not roll back an already started working program.
   try { Remove-Item -LiteralPath $BackupDir -Recurse -Force -ErrorAction Stop } catch {}
   try { Remove-Item -LiteralPath $WorkDir -Recurse -Force -ErrorAction Stop } catch {}
