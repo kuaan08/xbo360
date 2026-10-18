@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1
+
+- Inspect a supplied Rise of the Tomb Raider XEX and confirm a missing PowerPC leaf function at `0x82C21240` with a 112-byte extent, based on disassembly and adjacent PDATA entries.
+- Show checksum-matched known hints in **Library → Function hints**, requiring explicit user selection and save; other revisions receive no suggested size.
+- Add the read-only `suggest-hints` CLI and test that it never mutates the XEX or project and refuses nonmatching checksums.
+- Document the evidence and test procedure; gameplay compatibility remains unconfirmed.
+
+
 ## 0.3.0
 
 - Add a persistent, opt-in Force checkbox in the Recompile page and Settings. It reaches the desktop codegen process via the real ReXGlue global `--force` flag; ordinary builds still validate normally.
