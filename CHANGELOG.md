@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.4
+
+- Fix Windows CMake configuration reporting `CMAKE_MAKE_PROGRAM is not set` even when Ninja is installed but not visible to the process after Visual Studio environment initialization.
+- Find Ninja across PATH, Visual Studio's CMake/Ninja bundle, installed CMake and WinGet links; verify `ninja --version` actually runs before accepting it.
+- Pass the validated absolute Ninja executable path to CMake with `-DCMAKE_MAKE_PROGRAM:FILEPATH=...` and retain `CMAKE_SUPPRESS_REGENERATION=ON` to prevent the previous 100-regeneration loop.
+- Explain the official Ninja installation command when no working executable is found, before running the expensive game codegen phase.
+- Extend desktop toolchain diagnostics and regression tests for Ninja aliases and paths with spaces.
+
 ## 0.3.3
 
 - Fix repeated `[0/N] Re-running CMake...` followed by Ninja `manifest 'build.ninja' still dirty after 100 tries` on Windows projects. Each workbench build already invokes ReXGlue codegen and CMake configure explicitly, so the wrapper now configures Ninja with `CMAKE_SUPPRESS_REGENERATION=ON`, avoiding unnecessary build-time regeneration.
