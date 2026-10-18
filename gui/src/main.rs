@@ -32,6 +32,8 @@ struct Settings {
     android_sdk: String,
     android_ndk: String,
     android_runtime_source: String,
+    disable_auto_update_check: bool,
+    auto_install_updates: bool,
 }
 
 struct App {
@@ -46,6 +48,9 @@ struct App {
     update_rx: Option<Receiver<Result<serde_json::Value, String>>>,
     update: Option<serde_json::Value>,
     update_error: String,
+    show_updates: bool,
+    update_install_requested: bool,
+    restart_for_update: bool,
     show_setup: bool,
     show_settings: bool,
     install_confirmation: Option<String>,
@@ -86,6 +91,11 @@ impl App {
             settings.name = "my_game".into();
         }
         let tools_rx = Some(request_json(&settings.python, "toolchain", &cc.egui_ctx));
+        let update_rx = if settings.disable_auto_update_check {
+            None
+        } else {
+            Some(request_json(&settings.python, "update", &cc.egui_ctx))
+        };
         Self {
             settings,
             settings_path,
@@ -95,9 +105,12 @@ impl App {
             tab: 0,
             tools_rx,
             tools: None,
-            update_rx: None,
+            update_rx,
             update: None,
             update_error: String::new(),
+            show_updates: false,
+            update_install_requested: false,
+            restart_for_update: false,
             show_setup: false,
             show_settings: false,
             install_confirmation: None,
@@ -152,6 +165,24 @@ impl App {
                 self.progress.phase = job::Phase::Failed;
             }
         }
+    }
+
+    fn install_update(&mut self, ctx: &egui::Context) {
+        if !cfg!(windows) {
+            self.update_error = "Self-installation is currently available for Windows only.".into();
+            self.show_updates = true;
+            return;
+        }
+        if self.job.is_some() || self.update_install_requested || self.update.as_ref().is_none_or(|v| v["current"] != false) {
+            return;
+        }
+        self.update_error.clear();
+        self.update_install_requested = true;
+        self.start(ctx, vec![
+            "update".into(), "--install".into(),
+            "--parent-pid".into(), std::process::id().to_string(),
+            "--app-dir".into(), toolchain::home().to_string_lossy().into_owned(),
+        ]);
     }
 
     fn sdk_args(&self, args: &mut Vec<String>) {
@@ -215,6 +246,15 @@ impl App {
                 job::Phase::Failed
             };
             self.log.push(format!("Process exited: {code:?}"));
+            if self.update_install_requested {
+                self.update_install_requested = false;
+                if !cancelled && code == Some(0) {
+                    self.restart_for_update = true;
+                } else {
+                    self.show_updates = true;
+                    self.update_error = "Could not stage the update; the original app was not changed. Check the log.".into();
+                }
+            }
             self.job = None;
         }
     }
@@ -431,7 +471,18 @@ impl App {
                 }
                 ui.selectable_value(&mut self.settings.renderer, "vulkan".into(), "Vulkan");
             });
-        ui.label("The chosen backend must be present in your SDK's Xenos plugin.");
+        ui.label("Official ReXGlue 0.10.0 Windows SDK is built with DX12; Vulkan requires a separately built Vulkan-enabled SDK/plugin.");
+        section(ui, "Automatic updates");
+        let mut auto_check = !self.settings.disable_auto_update_check;
+        if ui.checkbox(&mut auto_check, "Check for new versions automatically when the app starts").changed() {
+            self.settings.disable_auto_update_check = !auto_check;
+            self.save();
+        }
+        if ui.checkbox(&mut self.settings.auto_install_updates,
+                       "Automatically install verified updates and restart the app on startup (Windows)").changed() {
+            self.save();
+        }
+        ui.label("With automatic installation disabled, the app notifies you and offers one-click Install & Restart. Projects and settings are kept outside the application folder.");
         ui.label("Windows builds need Visual Studio C++, Windows 10/11 SDK libraries, Clang 20+, CMake and Ninja.");
         ui.label("The app loads the installed Visual Studio build environment automatically.");
     }
@@ -442,6 +493,11 @@ impl eframe::App for App {
         let ctx = ui.ctx().clone();
         self.poll();
         self.poll_background(&ctx);
+        if self.restart_for_update {
+            self.restart_for_update = false;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            return;
+        }
         if self.job.is_some() || self.tools_rx.is_some() || self.update_rx.is_some() {
             ctx.request_repaint_after(Duration::from_millis(120));
         }
@@ -474,10 +530,14 @@ impl eframe::App for App {
                             self.tab = i;
                         }
                     }
+                    let needs_update = self.update.as_ref().is_some_and(|v| v["current"] == false);
                     if ui
-                        .add_enabled(self.update_rx.is_none(), egui::Button::new("Updates"))
+                        .add_enabled(self.update_rx.is_none(), egui::Button::new(
+                            if needs_update { "Updates · NEW" } else { "Updates" }
+                        ))
                         .clicked()
                     {
+                        self.show_updates = true;
                         self.update_error.clear();
                         self.update_rx = Some(request_json(&self.settings.python, "update", &ctx));
                     }
@@ -602,8 +662,22 @@ impl App {
         if let Some(result) = self.update_rx.as_ref().and_then(|r| r.try_recv().ok()) {
             self.update_rx = None;
             match result {
-                Ok(v) => self.update = Some(v),
-                Err(e) => self.update_error = e,
+                Ok(v) => {
+                    let available = v["current"] == false;
+                    self.update = Some(v);
+                    if available {
+                        if self.settings.auto_install_updates && cfg!(windows) && self.job.is_none() {
+                            self.install_update(ctx);
+                        } else {
+                            self.show_updates = true;
+                        }
+                    }
+                }
+                Err(e) => {
+                    self.update_error = e;
+                    // A background network failure is nonfatal; reveal it only
+                    // if the user explicitly opened the Updates panel.
+                }
             }
         }
         if let Some(result) = self.hint_rx.as_ref().and_then(|r| r.try_recv().ok()) {
@@ -739,7 +813,7 @@ impl App {
     }
 
     fn about(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Xbox360Recomp 0.3.2");
+        ui.heading("Xbox360Recomp 0.3.6");
         ui.label("SwitchRecomp by MZ Labs — original interface foundation (Apache-2.0).");
         ui.label("Xbox 360 fork additions: katakishi0 · hosting: kuaan08.");
         ui.label("ReXGlue by Tom Clay and contributors, with Xenia and XenonRecomp research.");
@@ -931,20 +1005,36 @@ impl App {
                 });
             self.show_settings = open;
         }
-        if self.update.is_some() || !self.update_error.is_empty() {
+        if self.show_updates {
             let mut open = true;
             let info = self.update.clone();
-            egui::Window::new("Updates").open(&mut open).show(ctx, |ui| {
+            egui::Window::new("Updates").open(&mut open).default_width(440.0).show(ctx, |ui| {
+                if self.update_rx.is_some() { ui.spinner(); ui.label("Checking official release..."); }
                 if let Some(v) = &info {
                     ui.label(if v["current"]==true {"You have the current version."} else {"A newer version is available."});
                     ui.label(v["version"].as_str().unwrap_or(""));
-                    if let Some(url)=v["url"].as_str() {ui.hyperlink(url);}
-                    if ui.add_enabled(v["current"]!=true && self.job.is_none(),egui::Button::new("Download verified update")).clicked() {self.start(ctx,vec!["update".into(),"--download".into()]);}
-                    ui.label("The download is SHA-256 checked. Extract it and replace the portable app after closing it; settings are retained.");
-                } else {ui.label(&self.update_error);}
+                    if v["current"] == false && cfg!(windows) {
+                        if ui.add_enabled(self.job.is_none() && self.update_rx.is_none(),
+                            egui::Button::new("Install verified update and restart")).clicked() {
+                            self.install_update(ctx);
+                        }
+                        ui.label("Downloads the GitHub release automatically, verifies SHA-256, swaps the portable app after exit and restarts it. No manual ZIP extraction.");
+                    } else if v["current"] == false {
+                        ui.label("In-app replacement is currently available only for Windows.");
+                    }
+                    ui.label("The new release must provide a published SHA-256 digest. Failed updates leave the existing installation intact.");
+                } else if self.update_rx.is_none() {
+                    ui.label("Unable to check the latest release.");
+                }
+                if !self.update_error.is_empty() {
+                    ui.colored_label(theme::ERROR, &self.update_error);
+                }
+                if self.job.is_none() && self.update_rx.is_none() && ui.button("Check again").clicked() {
+                    self.update_rx = Some(request_json(&self.settings.python, "update", ctx));
+                }
             });
             if !open {
-                self.update = None;
+                self.show_updates = false;
                 self.update_error.clear();
             }
         }
