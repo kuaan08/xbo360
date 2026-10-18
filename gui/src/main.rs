@@ -169,13 +169,11 @@ impl App {
         self.log.clear();
         self.log.push(format!("> {}", cfg.display()));
         self.progress = Default::default();
+        // Show startup failures too, not only the log stream after spawn.
+        // This works for jobs started from Library, Recompile or Settings.
+        self.tab = 4;
         match job::Job::start(&cfg, ctx) {
-            Ok(j) => {
-                self.job = Some(j);
-                // Always expose build/codegen/APK logs, including actions started
-                // from Library or Settings. Do not leave output behind another tab.
-                self.tab = 4;
-            },
+            Ok(j) => self.job = Some(j),
             Err(e) => {
                 self.log.push(format!("Error: {e}"));
                 self.progress.phase = job::Phase::Failed;
