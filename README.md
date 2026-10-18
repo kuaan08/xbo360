@@ -2,7 +2,7 @@
 
 Xbox 360 Recomp adapts the desktop workflow of [SwitchRecompz](https://github.com/kuaan08/Switchrecompz) to Xbox 360 static recompilation through [ReXGlue](https://github.com/rexglue/rexglue-sdk). It prepares per-title C++ projects, invokes PowerPC analysis/code generation, builds native PC executables, and launches completed builds.
 
-**Status: experimental workbench, version 0.1.0.** Project initialization has been tested against the official ReXGlue 0.10.0 binary. This repository has no validated commercial-game compatibility list. Building a title successfully does not establish that it boots, renders correctly, or is playable.
+**Status: experimental workbench, version 0.1.0.** Project initialization and PowerPC-to-C++ generation have been tested against the official ReXGlue 0.10.0 binary using an original synthetic XEX. This repository has no validated commercial-game compatibility list. Building a title successfully does not establish that it boots, renders correctly, or is playable.
 
 This project recompiles **Xbox 360 software for a Windows/Linux PC**. It does not convert Nintendo Switch games into Xbox 360 games and does not generate executables for Xbox 360 hardware.
 
@@ -108,9 +108,9 @@ python3 -m unittest discover -s tests -v
 cargo test --locked --manifest-path gui/Cargo.toml
 ```
 
-Set `XBO360_TEST_SDK` to an installed SDK prefix to enable the real-SDK initialization and error-propagation test. It uses a synthetic XEX header created during the test, with no commercial data. This validates project integration and rejection of an incomplete executable; it is not a gameplay or successful full-recompilation test.
+Set `XBO360_TEST_SDK` to an installed SDK prefix to enable real-SDK tests. They initialize projects, translate an original two-instruction PowerPC XEX into C++, and verify rejection of incomplete input. The Windows CI also attempts the complete native compilation pipeline for that fixture. These tests use no commercial data and do not establish gameplay compatibility.
 
-The CI checks Python on Windows/Linux, builds/tests the Rust frontend, checks the official SDK integration, and packages a Windows frontend. See [architecture and upstream decisions](docs/ARCHITECTURE.md) for the reviewed revisions and remaining work.
+The CI checks Python on Windows/Linux, builds/tests the Rust frontend, checks the official SDK integration and synthetic native build, and packages a Windows frontend. See [architecture and upstream decisions](docs/ARCHITECTURE.md) for the reviewed revisions and remaining work.
 
 ## Credits and license
 

@@ -127,6 +127,9 @@ impl App {
             args.extend(["--game-root".into(), s.game_root.clone()]);
         }
         self.sdk_args(&mut args);
+        if stage == "recompile" {
+            args.extend(["--jobs".into(), self.settings.jobs.to_string()]);
+        }
         if !self.settings.projects.contains(&self.settings.project)
             && !self.settings.project.is_empty()
         {

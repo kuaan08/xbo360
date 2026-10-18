@@ -120,6 +120,22 @@ class StateTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get("XBO360_TEST_SDK"), "Set XBO360_TEST_SDK for official SDK integration")
 class SDKIntegrationTests(unittest.TestCase):
+    def test_real_codegen_translates_original_ppc_fixture(self):
+        from ci.make_test_xex import make_test_xex
+        with tempfile.TemporaryDirectory(prefix="xbo360-codegen-") as tmp:
+            root = Path(tmp)
+            exe = root / "Game Data" / "Default.xex"
+            make_test_xex(exe)
+            project = root / "Project"
+            sdk = Path(os.environ["XBO360_TEST_SDK"])
+            with contextlib.redirect_stdout(io.StringIO()):
+                x.prepare(exe, project, "fixture", sdk, exe.parent)
+                x.codegen(project)
+            self.assertEqual(x.load_project(project)["status"], "generated")
+            self.assertTrue((project / "generated/default/sources.cmake").is_file())
+            sources = "\n".join(p.read_text() for p in project.rglob("*.cpp"))
+            self.assertIn("82001000", sources)
+
     def test_real_init_preserves_paths_and_stages_xenos(self):
         with tempfile.TemporaryDirectory(prefix="xbo360-test-") as tmp:
             root = Path(tmp)

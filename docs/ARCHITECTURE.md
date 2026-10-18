@@ -31,10 +31,10 @@ The exact official SDK download SHA-256 values are in `xbo360.py`. Existing user
 
 ## Verification scope
 
-Automated tests cover header validation, path escaping/casing, refusal of invalid project paths, SDK mismatch, child failure propagation, and stale executable invalidation. The optional integration test executes the official SDK initializer and checks generated integration before verifying that incomplete synthetic input fails cleanly. Rust tests exercise the reused log/progress parser.
+Automated tests cover header validation, path escaping/casing, refusal of invalid project paths, SDK mismatch, child failure propagation, and stale executable invalidation. The optional integration tests execute the official SDK initializer, translate an original XEX with PE/PDATA metadata and the instructions `li r3,1; blr`, and verify that incomplete synthetic input fails cleanly. Windows CI also compiles the generated fixture project and its runtime integration. Rust tests exercise the reused log/progress parser.
 
 No commercial executable was supplied for this adaptation, and no successful commercial translation or gameplay test is claimed. SDK codegen, linking, runtime startup and game behavior must be evaluated separately for a selected title. An ELF probe also encountered the SDK's requirement for PE exception metadata; ELF is not exposed as a supported workbench input.
 
 ## Follow-up work
 
-Add a redistributable synthetic XEX with valid PE/PDATA metadata for a successful full codegen/link test; validate a user-selected title end to end; add per-title configuration editing and compatibility reports; package external compiler prerequisites more conveniently. ISO/STFS import and Android require separate implementations and tests.
+Validate a user-selected title end to end; add per-title configuration editing and compatibility reports; package external compiler prerequisites more conveniently. ISO/STFS import and Android require separate implementations and tests.
