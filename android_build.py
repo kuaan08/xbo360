@@ -179,7 +179,7 @@ def package(work, metadata, libs, sdl_java, android_sdk, license_files=()):
     cmd([t["java"], "-cp", t["d8"], "com.android.tools.r8.D8", "--min-api", "33", "--lib", t["android"], "--output", dex, class_jar])
     game_activity = ('<activity android:name="org.xbo360.app.GameActivity" android:exported="false" android:process=":game" android:hardwareAccelerated="true" android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|screenLayout|uiMode|navigation|density"/>' if libs else '')
     manifest = work / "AndroidManifest.xml"
-    manifest.write_text(f'''<manifest xmlns:android="http://schemas.android.com/apk/res/android" package={quoteattr(metadata['package'])} android:versionCode="303" android:versionName="0.3.3">
+    manifest.write_text(f'''<manifest xmlns:android="http://schemas.android.com/apk/res/android" package={quoteattr(metadata['package'])} android:versionCode="304" android:versionName="0.3.4">
 <uses-sdk android:minSdkVersion="33" android:targetSdkVersion="35"/>
 <uses-permission android:name="android.permission.INTERNET"/>
 <uses-feature android:name="android.hardware.gamepad" android:required="false"/>
