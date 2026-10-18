@@ -49,14 +49,20 @@ class PortableUpdateTests(unittest.TestCase):
     def test_path_traversal_is_rejected(self):
         for attack in ("Xbox360Recomp/../../outside.exe",
                        "Xbox360Recomp/../outside",
-                       "Xbox360Recomp/C:/Windows/system32.dll",
-                       "Xbox360Recomp/dir\\outside"):
+                       "Xbox360Recomp/C:/Windows/system32.dll"):
             with self.subTest(path=attack):
                 self.make_zip({attack: b"malicious"})
                 with self.assertRaises(ValueError):
                     updates.extract_verified_windows_package(self.package, self.out)
                 self.assertFalse(self.out.exists())
                 self.assertFalse((self.root / "outside.exe").exists())
+
+    def test_backslash_normalized_safely_by_python_zipfile(self):
+        # On Windows ZipInfo normalizes \\ to / even before validation,
+        # converting a harmless nested path into an ordinary nested path.
+        self.make_zip({"Xbox360Recomp/dir\\nested.txt": b"nested"})
+        updates.extract_verified_windows_package(self.package, self.out)
+        self.assertEqual((self.out / "dir" / "nested.txt").read_bytes(), b"nested")
 
     def test_file_case_collisions_rejected(self):
         self.make_zip({"Xbox360Recomp/xbo360.PY": b"replacement"})
