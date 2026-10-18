@@ -82,10 +82,12 @@ jobs:
           log-accepted-android-sdk-licenses: false
       - name: Android build tools
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018'
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
+        id: android-cache
         with:
           path: ~/.cache/Xbox360Recomp/android
-          key: android-rp6-8dd8b369-clang20-ndk27c-v1
+          key: android-rp6-8dd8b369-clang20-ndk27c-${{ github.run_id }}
+          restore-keys: android-rp6-8dd8b369-clang20-ndk27c-
       - name: Build and verify library APK
         run: python xbo360.py android
       - uses: actions/upload-artifact@v4
@@ -97,12 +99,18 @@ jobs:
         run: |
           wget -q https://apt.llvm.org/llvm.sh -O /tmp/llvm-xbo.sh
           sudo bash /tmp/llvm-xbo.sh 20
-          sudo apt-get install -y clang-20 lld-20 libgtk-3-dev libvulkan-dev ninja-build libx11-dev libxkbcommon-dev libwayland-dev libpulse-dev libasound2-dev
+          sudo apt-get install -y clang-20 lld-20 libgtk-3-dev libvulkan-dev ninja-build libx11-dev libx11-xcb-dev libxkbcommon-dev libwayland-dev libpulse-dev libasound2-dev libpipewire-0.3-dev glslc glslang-tools
       - name: Prepare original test executable
         run: |
           python xbo360.py install-sdk --sdk sdk
           python ci/make_test_xex.py dist/synthetic-game/Default.xex
           python xbo360.py prepare dist/synthetic-game/Default.xex --project dist/android-fixture --name fixture --sdk sdk
+      - uses: actions/cache/restore@v4
+        id: native-cache
+        with:
+          path: dist/android-fixture/android-export
+          key: android-cross-rp6-ndk27c-${{ github.run_id }}
+          restore-keys: android-cross-rp6-ndk27c-
       - name: Compile synthetic title for Android ARM64 and export signed APK
         run: python xbo360.py android --project dist/android-fixture --runtime --jobs 3
       - uses: actions/upload-artifact@v4
@@ -113,6 +121,16 @@ jobs:
             dist/android-fixture/android-export/*.apk
             dist/android-fixture/android-export/*.log
           if-no-files-found: warn
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: ~/.cache/Xbox360Recomp/android
+          key: ${{ steps.android-cache.outputs.cache-primary-key }}
+      - uses: actions/cache/save@v4
+        if: always() && steps.native-cache.outcome == 'success'
+        with:
+          path: dist/android-fixture/android-export
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
 
   publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

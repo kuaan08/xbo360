@@ -66,7 +66,9 @@ impl App {
             .ok()
             .and_then(|b| serde_json::from_slice(&b).ok())
             .unwrap_or_default();
-        if settings.python.is_empty() {
+        if settings.python.is_empty()
+            || (Path::new(&settings.python).is_absolute() && !Path::new(&settings.python).is_file())
+        {
             settings.python = toolchain::python().to_string_lossy().into_owned();
         }
         if settings.renderer.is_empty() {
@@ -456,17 +458,17 @@ impl eframe::App for App {
                             .as_ref()
                             .is_some_and(|v| v["desktop_ready"] == true);
                         if ui
-                            .colored_label(
-                                if ready {
-                                    theme::SUCCESS
-                                } else {
-                                    theme::WARNING
-                                },
-                                if ready {
+                            .button(
+                                RichText::new(if ready {
                                     "Toolchain ready"
                                 } else {
                                     "Setup tools"
-                                },
+                                })
+                                .color(if ready {
+                                    theme::SUCCESS
+                                } else {
+                                    theme::WARNING
+                                }),
                             )
                             .clicked()
                         {
@@ -810,32 +812,37 @@ impl App {
                 .show(ctx, |ui| {
                     let path = Path::new(&root).join("launch-settings.json");
                     let id = egui::Id::new(format!("launch_{root}"));
-                    let mut value =
-                        ctx.data_mut(|d| d.get_temp::<String>(id))
-                            .unwrap_or_else(|| {
-                                std::fs::read_to_string(&path).unwrap_or_else(|_| {
-                                    "{\n  \"renderer\": \"any\",\n  \"fullscreen\": false\n}".into()
-                                })
-                            });
-                    ui.label("Per-game launch settings: renderer (any/d3d12/vulkan), fullscreen.");
-                    ui.add(
-                        egui::TextEdit::multiline(&mut value)
-                            .code_editor()
-                            .desired_width(500.0),
-                    );
-                    ctx.data_mut(|d| d.insert_temp(id, value.clone()));
+                    let value = ctx
+                        .data_mut(|d| d.get_temp::<String>(id))
+                        .unwrap_or_else(|| {
+                            std::fs::read_to_string(&path).unwrap_or_else(|_| "{}".into())
+                        });
+                    let config =
+                        serde_json::from_str::<serde_json::Value>(&value).unwrap_or_default();
+                    let mut renderer = config["renderer"].as_str().unwrap_or("any").to_string();
+                    let mut fullscreen = config["fullscreen"].as_bool().unwrap_or(false);
+                    egui::ComboBox::from_label("Graphics backend")
+                        .selected_text(&renderer)
+                        .show_ui(ui, |ui| {
+                            for (value, label) in [
+                                ("any", "Automatic"),
+                                ("d3d12", "Direct3D 12"),
+                                ("vulkan", "Vulkan"),
+                            ] {
+                                ui.selectable_value(&mut renderer, value.into(), label);
+                            }
+                        });
+                    ui.checkbox(&mut fullscreen, "Start in fullscreen");
+                    let serialized = serde_json::to_string_pretty(
+                        &serde_json::json!({"renderer":renderer,"fullscreen":fullscreen}),
+                    )
+                    .unwrap_or_default();
+                    ctx.data_mut(|d| d.insert_temp(id, serialized.clone()));
                     if ui.button("Save").clicked() {
-                        match serde_json::from_str::<serde_json::Value>(&value) {
-                            Ok(_) => {
-                                if let Err(e) = std::fs::write(path, &value) {
-                                    self.log.push(e.to_string());
-                                } else {
-                                    self.edit_project = None;
-                                }
-                            }
-                            Err(e) => {
-                                ui.colored_label(theme::ERROR, e.to_string());
-                            }
+                        if let Err(e) = std::fs::write(path, serialized) {
+                            self.log.push(e.to_string());
+                        } else {
+                            self.edit_project = None;
                         }
                     }
                 });

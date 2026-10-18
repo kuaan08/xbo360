@@ -448,6 +448,7 @@ def main(argv=None) -> int:
             if args.download and not info["current"]:
                 target = updates.download(info, args.directory or cache_root() / "updates" / info["version"])
                 print(f"Update downloaded and verified: {target}", flush=True)
+                print(f"Done: {target}", flush=True)
         elif args.command == "android":
             import android_build
             android_build.export(args.project, args.sdk_source, args.ndk, args.android_sdk,
