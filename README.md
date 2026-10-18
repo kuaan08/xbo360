@@ -103,6 +103,14 @@ The Windows ZIP contains the frontend, Python, the desktop ReXGlue SDK, Android 
 
 The Updates button checks this repository's releases. Windows update downloads require the release asset's published SHA-256 and size. Extract the verified ZIP and replace the portable application after closing it; user settings live outside the application directory. Android's Updates button opens the same official release page for user-controlled installation.
 
+## Windows compiler links fail: kernel32.lib / msvcrtd.lib
+
+If ReXGlue codegen succeeds but CMake reports `lld-link: error: could not open 'kernel32.lib'` (or `msvcrtd.lib`, `oldnames.lib`), the guest PowerPC analysis is no longer the blocker. The Windows native linker is missing its **Windows SDK and/or MSVC library paths**. Clang, CMake and Ninja being present is insufficient.
+
+Xbox360Recomp 0.3.2 detects the Visual Studio `vcvars64.bat` environment and checks that required SDK/MSVC `.lib` files actually exist in the captured `LIB` directories **before** it runs codegen/CMake. The startup wizard and `python xbo360.py toolchain` identify missing libraries; `python xbo360.py doctor` also provides guidance.
+
+Open **Visual Studio Installer → Modify → Desktop development with C++**; verify MSVC x64/x86 build tools and a Windows 10/11 SDK are selected, install the missing components, restart Xbox360Recomp and run **Settings → Check toolchain**, then retry **Library → Build**. The existing `artifacts` project and any validated function hint are retained. You do not need to re-extract the ISO or re-run `rexglue init`. Force mode does **not** solve missing Windows libraries.
+
 ## Fixing unresolved analysis branches
 
 For the exact tested *Rise of the Tomb Raider* XEX revision, a [detailed disassembly and PDATA analysis](docs/RISE_TOMB_RAIDER_ANALYSIS.md) establishes a missing 112-byte function at `0x82C21240`. **Library → Function hints → Check verified hints for this XEX** checks the original executable's SHA-256 and offers a verified suggestion only for that revision. You must explicitly select and save the hint. Other revisions receive no guessed sizes. CLI: `python xbo360.py suggest-hints "D:\\Ports\\my_game"`. Successful C++ generation and gameplay remain unconfirmed.
