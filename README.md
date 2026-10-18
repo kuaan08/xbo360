@@ -103,6 +103,24 @@ The Windows ZIP contains the frontend, Python, the desktop ReXGlue SDK, Android 
 
 The Updates button checks this repository's releases. Windows update downloads require the release asset's published SHA-256 and size. Extract the verified ZIP and replace the portable application after closing it; user settings live outside the application directory. Android's Updates button opens the same official release page for user-controlled installation.
 
+## Fixing unresolved analysis branches
+
+Some games reach the ReXGlue `Validate` phase and stop with an unresolved branch target, e.g. the reported `0x82C21240 from 0x82C22B14: b 0x82C21240`. In PowerPC a `b` can be a jump into an existing function or a tail call. **The log does not establish a valid function size.**
+
+The **Library → Function hints** window shows unresolved branches from the project's `build.log`. You can select the target address, disassemble the corresponding game executable externally, enter the verified function size (in bytes, divisible by four) and optionally a parent address for an out-of-line function chunk. The application creates `xbo360-function-hints.toml`, adds the file to `[entrypoint].includes`, and leaves the original game intact. Existing projects can be regenerated without initializing over their directories.
+
+Equivalent CLI commands:
+
+```powershell
+python xbo360.py diagnose "D:\Ports\my_game"
+python xbo360.py function-hint "D:\Ports\my_game" --address 0x82C21240 --size VERIFIED_BYTE_COUNT
+python xbo360.py codegen "D:\Ports\my_game"
+```
+
+`VERIFIED_BYTE_COUNT` is a placeholder; **64, 128 or any other size would be a guess without analyzing the XEX**. The tool refuses unaligned addresses and sizes, conflicting edits and unsafe manifest paths.
+
+The optional Force checkbox appears on the Recompile page and in Settings (default off). On the CLI, use `python xbo360.py codegen "D:\Ports\my_game" --force`, or add `--force` to `build`/`recompile`. It passes the global ReXGlue `--force` before `codegen`; this allows further diagnosis despite analysis validation problems, but **it cannot fix control flow, guarantee native C++ compilation, or make an incompatible game playable**.
+
 ## Getting started
 
 ### Windows
