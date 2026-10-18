@@ -432,7 +432,7 @@ impl App {
                 ui.selectable_value(&mut self.settings.renderer, "vulkan".into(), "Vulkan");
             });
         ui.label("The chosen backend must be present in your SDK's Xenos plugin.");
-        ui.label("Windows builds need Visual Studio 2022 C++, Clang 20+, CMake and Ninja.");
+        ui.label("Windows builds need Visual Studio C++, Windows 10/11 SDK libraries, Clang 20+, CMake and Ninja.");
         ui.label("The app loads the installed Visual Studio build environment automatically.");
     }
 }
@@ -739,7 +739,7 @@ impl App {
     }
 
     fn about(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Xbox360Recomp 0.3.1");
+        ui.heading("Xbox360Recomp 0.3.2");
         ui.label("SwitchRecomp by MZ Labs — original interface foundation (Apache-2.0).");
         ui.label("Xbox 360 fork additions: katakishi0 · hosting: kuaan08.");
         ui.label("ReXGlue by Tom Clay and contributors, with Xenia and XenonRecomp research.");
@@ -850,6 +850,21 @@ impl App {
                 if let Some(tools) = &self.tools {
                     let vs_ready = tools["visual_studio"].is_string();
                     ui.label(format!("Visual Studio C++: {}", if vs_ready {"detected"} else {"missing"}));
+                    if cfg!(windows) {
+                        let link = &tools["windows_linker"];
+                        if link["ready"] == true {
+                            ui.colored_label(theme::SUCCESS, "Windows SDK / MSVC linker libraries: ready");
+                        } else {
+                            let missing = link["missing_libraries"].as_array()
+                                .map(|items| items.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join(", "))
+                                .unwrap_or_else(|| "status unavailable".into());
+                            ui.colored_label(theme::WARNING, format!("Missing Windows SDK / MSVC libraries: {missing}"));
+                            ui.label("Visual Studio Installer > Modify > Desktop development with C++: add MSVC x64/x86 and Windows 10/11 SDK.");
+                        }
+                        if let Some(error) = tools["environment_error"].as_str().filter(|s| !s.is_empty()) {
+                            ui.colored_label(theme::WARNING, error);
+                        }
+                    }
                     if let Some(list) = tools["tools"].as_array() { for t in list { ui.label(format!("{}: {}",t["name"].as_str().unwrap_or(""), t["version"].as_str().filter(|s|!s.is_empty()).unwrap_or("missing"))); } }
                 }
                 ui.add_enabled_ui(self.job.is_none(), |ui| {
