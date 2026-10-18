@@ -434,6 +434,10 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Xbox 360 Recomp — ReXGlue project workbench")
     parser.add_argument("--version", action="version", version=VERSION)
     commands = parser.add_subparsers(dest="command", required=True)
+    vulkan = commands.add_parser("build-vulkan-sdk", help="Build isolated experimental ReXGlue SDK with DX12 + Vulkan")
+    vulkan.add_argument("--yes", action="store_true", required=True,
+                        help="Explicitly authorize cloning official SDK source and compiling it")
+    vulkan.add_argument("--jobs", type=int, default=4)
     install = commands.add_parser("install-sdk", help="Download and verify the pinned SDK")
     install.add_argument("--sdk", type=Path)
     inspect = commands.add_parser("inspect", help="Inspect an extracted XEX2 header")
@@ -561,6 +565,9 @@ def main(argv=None) -> int:
         elif args.command == "function-hint":
             from analysis_hints import save_hint
             print(json.dumps(save_hint(args.project, args.address, args.size, args.parent), indent=2))
+        elif args.command == "build-vulkan-sdk":
+            from vulkan_sdk import build as build_vulkan
+            build_vulkan(confirmed=args.yes, jobs=args.jobs)
         elif args.command == "install-sdk":
             install_sdk(sdk)
         elif args.command == "inspect":
