@@ -104,6 +104,32 @@ The Windows ZIP contains the frontend, Python, the desktop ReXGlue SDK, Android 
 
 The Updates button checks this repository's releases. Windows update downloads require the release asset's published SHA-256 and size. Extract the verified ZIP and replace the portable application after closing it; user settings live outside the application directory. Android's Updates button opens the same official release page for user-controlled installation.
 
+## Experimental Bug Assistant and Vulkan SDK source build
+
+Xbox360Recomp 0.3.7 adds an **Assistant** tab plus **Library → Analyze bugs**,
+backed by an offline rules-based analyzer. It distinguishes unresolved PowerPC
+indirect function calls, physical heap allocation warnings, guest-file failures,
+and renderer support errors using the latest runtime and compilation logs.
+Click **Copy safe summary for ChatGPT or GitHub issue** to share a
+path-free report yourself. This is *not* a hosted generative AI, it does not
+upload any game data, and it does not claim to automatically fix retail titles.
+
+The upstream ReXGlue v0.10.0 Windows SDK bundled in the normal ZIP is **still
+Direct3D 12-only**. Settings now includes an explicit, opt-in **Build experimental
+Vulkan + DX12 SDK from pinned source** action. It clones the pinned official
+SDK with submodules, enables both Vulkan and Direct3D 12 at CMake configuration,
+and builds a separate SDK under the user's local cache. When that compilation
+succeeds and the plugin/configuration files validate, you can rebuild a game
+against it and select Vulkan in Game settings. GPU startup and real game
+rendering remain unverified; the default SDK is never replaced silently.
+
+The new RTTI-independent PPC pointer-table tool can report potential code
+pointers in a **previously decoded, mapped PE image**; it deliberately refuses
+raw encrypted XEX as plaintext and does **not** invent function sizes.
+The verified per-title function hint catalogue is updated, and the GUI avoids
+duplicating manual TOML hints. See the detailed [experimental diagnostics,
+Vulkan and discovery notes](docs/EXPERIMENTAL_DIAGNOSTICS_VULKAN.md).
+
 ## Automatic Windows application updates
 
 Starting with **v0.3.6**, the desktop frontend checks the latest
