@@ -1,0 +1,46 @@
+name: Experimental Vulkan SDK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/vulkan-sdk.yml'
+      - 'vulkan_sdk.py'
+      - 'tests/test_vulkan_sdk.py'
+
+permissions:
+  contents: read
+
+jobs:
+  vulkan-windows:
+    name: ReXGlue Vulkan + D3D12 SDK (experimental)
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Initialize native compiler environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Confirm source builder is offline-testable
+        run: python -m unittest discover -s tests -p test_vulkan_sdk.py -v
+      - name: Build pinned SDK with both backends
+        shell: pwsh
+        run: python xbo360.py build-vulkan-sdk --yes --jobs 4
+      - name: Check produced plugin and backend flags
+        shell: pwsh
+        run: |
+          $prefix = "$env:LOCALAPPDATA\Xbox360Recomp\sdk-vulkan\0.10.0\install"
+          $cache = "$env:LOCALAPPDATA\Xbox360Recomp\sdk-vulkan\0.10.0\source\out\build\win-amd64\CMakeCache.txt"
+          python -c "from pathlib import Path; import vulkan_sdk; vulkan_sdk.validate_installed_sdk(Path(r'$prefix'), Path(r'$cache'))"
+          Write-Host "Xenos SDK compiled both graphics backends. Game boot not yet validated."
+      - name: Upload SDK as experimental CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReXGlue-Vulkan-D3D12-Windows-experimental
+          path: ${{ env.LOCALAPPDATA }}\Xbox360Recomp\sdk-vulkan\0.10.0\install\
+          retention-days: 7
+          if-no-files-found: error
