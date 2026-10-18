@@ -50,6 +50,10 @@ struct App {
     show_settings: bool,
     install_confirmation: Option<String>,
     edit_project: Option<String>,
+    hint_project: Option<String>,
+    hint_address: String,
+    hint_size: String,
+    hint_parent: String,
     check_after_job: bool,
 }
 
@@ -95,6 +99,10 @@ impl App {
             show_settings: false,
             install_confirmation: None,
             edit_project: None,
+            hint_project: None,
+            hint_address: String::new(),
+            hint_size: String::new(),
+            hint_parent: String::new(),
             check_after_job: false,
         }
     }
@@ -362,6 +370,12 @@ impl App {
                         .clicked()
                     {
                         self.edit_project = Some(root.clone());
+                    }
+                    if ui.add_enabled(state.is_some(), egui::Button::new("Function hints")).clicked() {
+                        self.hint_project = Some(root.clone());
+                        self.hint_address.clear();
+                        self.hint_size.clear();
+                        self.hint_parent.clear();
                     }
                     if ui.button("Open folder").clicked() {
                         open_path(path);
