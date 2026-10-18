@@ -1,5 +1,11 @@
 # Architecture and research notes
 
+## 0.2.0 additions
+
+The desktop frontend now follows the original Recompile/Library/About layout and adds explicit prerequisite setup, release checks/downloads, folder/ISO input and Android export controls. See README.md for the component map and docs/REVIEW.md for findings addressed.
+
+Android uses a separate source SDK generation: AlanConstantino/rexglue-skate3-android at `8dd8b369ba2770259776472b981bcecd0dcc11f0`. Its own host CLI generates code for its own runtime. This separation avoids the incompatible image-info/codegen/runtime APIs between that fork and desktop SDK 0.10.0. Native generation and packaging live in `android_build.py`; the Java menu imports assets, checks the exported executable hash and starts the matching SDL Activity. No universal on-device interpreter is present.
+
 ## Reviewed sources
 
 | Source | Revision | Decision |

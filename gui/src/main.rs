@@ -7,10 +7,11 @@ mod job;
 mod theme;
 mod toolchain;
 
-use eframe::egui::{self, RichText};
+use eframe::egui::{self, Align, Color32, Layout, Margin, RichText, Stroke};
 use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{self, Receiver};
 use std::time::Duration;
 
 #[derive(Default, Serialize, Deserialize)]
@@ -25,6 +26,11 @@ struct Settings {
     projects: Vec<String>,
     renderer: String,
     jobs: u32,
+    recent: Vec<String>,
+    target_android: bool,
+    android_sdk: String,
+    android_ndk: String,
+    android_runtime_source: String,
 }
 
 struct App {
@@ -34,6 +40,16 @@ struct App {
     progress: job::Progress,
     log: Vec<String>,
     tab: usize,
+    tools_rx: Option<Receiver<Result<serde_json::Value, String>>>,
+    tools: Option<serde_json::Value>,
+    update_rx: Option<Receiver<Result<serde_json::Value, String>>>,
+    update: Option<serde_json::Value>,
+    update_error: String,
+    show_setup: bool,
+    show_settings: bool,
+    install_confirmation: Option<String>,
+    edit_project: Option<String>,
+    check_after_job: bool,
 }
 
 impl App {
@@ -59,6 +75,7 @@ impl App {
         if settings.name.is_empty() {
             settings.name = "my_game".into();
         }
+        let tools_rx = Some(request_json(&settings.python, "toolchain", &cc.egui_ctx));
         Self {
             settings,
             settings_path,
@@ -66,6 +83,16 @@ impl App {
             progress: Default::default(),
             log: vec![],
             tab: 0,
+            tools_rx,
+            tools: None,
+            update_rx: None,
+            update: None,
+            update_error: String::new(),
+            show_setup: false,
+            show_settings: false,
+            install_confirmation: None,
+            edit_project: None,
+            check_after_job: false,
         }
     }
 
@@ -88,6 +115,9 @@ impl App {
     fn start(&mut self, ctx: &egui::Context, args: Vec<String>) {
         if self.job.is_some() {
             return;
+        }
+        if args.first().is_some_and(|a| a == "install-tools") {
+            self.check_after_job = true;
         }
         self.save();
         let cfg = job::JobConfig {
@@ -135,6 +165,10 @@ impl App {
         {
             self.settings.projects.push(self.settings.project.clone());
         }
+        if !self.settings.recent.contains(&self.settings.input) {
+            self.settings.recent.insert(0, self.settings.input.clone());
+            self.settings.recent.truncate(12);
+        }
         self.start(ctx, args);
     }
 
@@ -168,16 +202,26 @@ impl App {
     }
 
     fn new_project(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        ui.heading("Recompile an Xbox 360 title");
-        ui.label("Select an extracted XEX and a separate project folder.");
+        section(ui, "1  ·  Choose a game");
+        ui.label("Open a folder, Xbox 360 XEX, or ISO/XISO.");
         ui.add_space(10.0);
-        field(
-            ui,
-            "Xbox 360 executable",
-            &mut self.settings.input,
-            false,
-            true,
-        );
+        field(ui, "Game input", &mut self.settings.input, false, true);
+        ui.horizontal_wrapped(|ui| {
+            if ui.button("Folder...").clicked()
+                && let Some(p) = rfd::FileDialog::new().pick_folder()
+            {
+                self.settings.input = p.to_string_lossy().into_owned();
+            }
+            ui.menu_button("Recent", |ui| {
+                for path in self.settings.recent.clone() {
+                    if ui.button(&path).clicked() {
+                        self.settings.input = path;
+                        ui.close();
+                    }
+                }
+            });
+        });
+        section(ui, "2  ·  Data and output");
         field(
             ui,
             "Game data directory (optional)",
@@ -195,8 +239,16 @@ impl App {
         ui.label("Project name (lowercase, for example my_game)");
         ui.text_edit_singleline(&mut self.settings.name);
         ui.add_space(10.0);
+        section(ui, "3  ·  Target and build");
         ui.horizontal(|ui| {
-            if ui.button("Inspect XEX").clicked() {
+            ui.selectable_value(&mut self.settings.target_android, false, "Windows / Linux");
+            ui.selectable_value(&mut self.settings.target_android, true, "Android APK");
+        });
+        if self.settings.target_android {
+            ui.label("Prepare the project first, then export its native APK from Library.");
+        }
+        ui.horizontal_wrapped(|ui| {
+            if ui.button("Verify input").clicked() {
                 self.start(ctx, vec!["inspect".into(), self.settings.input.clone()]);
             }
             if ui.button("Prepare project").clicked() {
@@ -204,12 +256,23 @@ impl App {
             }
             if ui
                 .add(
-                    egui::Button::new(RichText::new("Recompile + build").color(theme::BG))
-                        .fill(theme::ACCENT),
+                    egui::Button::new(
+                        RichText::new(if self.settings.target_android {
+                            "Prepare for APK"
+                        } else {
+                            "Recompile + build"
+                        })
+                        .color(theme::BG),
+                    )
+                    .fill(theme::ACCENT),
                 )
                 .clicked()
             {
-                self.create(ctx, "recompile");
+                if self.settings.target_android {
+                    self.create(ctx, "prepare");
+                } else {
+                    self.create(ctx, "recompile");
+                }
             }
         });
         ui.add_space(10.0);
@@ -220,7 +283,7 @@ impl App {
     }
 
     fn projects(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        ui.heading("Projects");
+        ui.heading("Library");
         if ui.button("Open existing project...").clicked()
             && let Some(p) = rfd::FileDialog::new().pick_folder()
         {
@@ -246,7 +309,7 @@ impl App {
                     .unwrap_or("not prepared");
                 ui.label(RichText::new(name).strong());
                 ui.label(format!("{status} · {root}"));
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     if ui
                         .add_enabled(state.is_some(), egui::Button::new("Generate C++"))
                         .clicked()
@@ -281,6 +344,18 @@ impl App {
                                 self.settings.renderer.clone(),
                             ],
                         );
+                    }
+                    if ui
+                        .add_enabled(state.is_some(), egui::Button::new("Export APK"))
+                        .clicked()
+                    {
+                        self.export_apk(ctx, Some(root.clone()));
+                    }
+                    if ui
+                        .add_enabled(state.is_some(), egui::Button::new("Game settings"))
+                        .clicked()
+                    {
+                        self.edit_project = Some(root.clone());
                     }
                     if ui.button("Open folder").clicked() {
                         open_path(path);
@@ -328,7 +403,7 @@ impl App {
             });
         ui.label("The chosen backend must be present in your SDK's Xenos plugin.");
         ui.label("Windows builds need Visual Studio 2022 C++, Clang 20+, CMake and Ninja.");
-        ui.label("Launch the workbench from an x64 Native Tools command prompt when building.");
+        ui.label("The app loads the installed Visual Studio build environment automatically.");
     }
 }
 
@@ -336,76 +411,140 @@ impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.poll();
-        if self.job.is_some() {
-            ctx.request_repaint_after(Duration::from_millis(100));
+        self.poll_background(&ctx);
+        if self.job.is_some() || self.tools_rx.is_some() || self.update_rx.is_some() {
+            ctx.request_repaint_after(Duration::from_millis(120));
         }
-        ui.heading(RichText::new("XBOX 360 RECOMP").color(theme::ACCENT));
-        ui.label("PowerPC → C++ → native PC · powered by ReXGlue");
-        ui.horizontal(|ui| {
-            for (i, label) in ["New project", "Projects", "Settings", "About"]
-                .iter()
-                .enumerate()
-            {
-                if ui.selectable_label(self.tab == i, *label).clicked() {
-                    self.tab = i;
-                }
+        if let Some(path) =
+            ctx.input(|i| i.raw.dropped_files.first().map(|f| f.path().to_path_buf()))
+        {
+            if self.job.is_none() {
+                self.settings.input = path.to_string_lossy().into_owned();
+                self.tab = 0;
             }
-        });
-        ui.separator();
-        let running = self.job.is_some();
-        ui.add_enabled_ui(!running, |ui| {
-            egui::ScrollArea::vertical().id_salt("page").max_height(380.0).show(ui, |ui| match self.tab {
-                0 => self.new_project(ui, &ctx),
-                1 => self.projects(ui, &ctx),
-                2 => self.settings_ui(ui, &ctx),
-                _ => {
-                    ui.heading("Xbox 360 Recomp 0.1.0");
-                    ui.label("SwitchRecomp by MZ Labs — original frontend foundation (Apache-2.0).");
-                    ui.label("Xbox 360 adaptation: katakishi0 · repository hosting: kuaan08.");
-                    ui.label("ReXGlue by Tom Clay and contributors; based on Xenia and XenonRecomp research.");
-                    ui.hyperlink("https://github.com/kuaan08/xbo360");
-                    ui.label("This is a PC recompilation workbench. Android and Xbox console targets are not implemented.");
-                    ui.label("No commercial game has been validated by this project yet.");
-                }
-            });
-        });
-        ui.separator();
-        ui.horizontal(|ui| {
-            if running {
-                ui.spinner();
-            }
-            ui.label(self.progress.describe());
-            if ui
-                .add_enabled(running, egui::Button::new("Cancel process tree"))
-                .clicked()
-                && let Some(j) = self.job.as_mut()
-            {
-                j.cancel();
-            }
-            if ui.button("Save visible log").clicked()
-                && let Some(path) = rfd::FileDialog::new()
-                    .set_file_name("xbo360.log")
-                    .save_file()
-                && let Err(e) = std::fs::write(path, self.log.join("\n"))
-            {
-                self.log.push(format!("Error saving log: {e}"));
-            }
-        });
-        egui::ScrollArea::vertical()
-            .id_salt("log")
-            .stick_to_bottom(true)
+        }
+        egui::Panel::top("top_bar")
+            .frame(
+                egui::Frame::new()
+                    .fill(theme::BG)
+                    .inner_margin(Margin::symmetric(16, 10)),
+            )
             .show(ui, |ui| {
-                for line in &self.log {
-                    let color = match job::classify(line) {
-                        job::LineKind::Error => theme::ERROR,
-                        job::LineKind::Warning => theme::WARNING,
-                        job::LineKind::Success => theme::SUCCESS,
-                        job::LineKind::Command => theme::ACCENT,
-                        _ => theme::TEXT_WEAK,
-                    };
-                    ui.label(RichText::new(line).monospace().size(12.0).color(color));
-                }
+                ui.horizontal(|ui| {
+                    logo(ui, 26.0);
+                    ui.label(
+                        RichText::new("Xbox360Recomp")
+                            .size(19.0)
+                            .strong()
+                            .color(Color32::WHITE),
+                    );
+                    ui.add_space(12.0);
+                    for (i, label) in ["Recompile", "Library", "About"].iter().enumerate() {
+                        if ui.selectable_label(self.tab == i, *label).clicked() {
+                            self.tab = i;
+                        }
+                    }
+                    if ui
+                        .add_enabled(self.update_rx.is_none(), egui::Button::new("Updates"))
+                        .clicked()
+                    {
+                        self.update_error.clear();
+                        self.update_rx = Some(request_json(&self.settings.python, "update", &ctx));
+                    }
+                    if ui.button("Settings").clicked() {
+                        self.show_settings = true;
+                    }
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        let ready = self
+                            .tools
+                            .as_ref()
+                            .is_some_and(|v| v["desktop_ready"] == true);
+                        if ui
+                            .colored_label(
+                                if ready {
+                                    theme::SUCCESS
+                                } else {
+                                    theme::WARNING
+                                },
+                                if ready {
+                                    "Toolchain ready"
+                                } else {
+                                    "Setup tools"
+                                },
+                            )
+                            .clicked()
+                        {
+                            self.show_setup = true;
+                        }
+                    });
+                });
             });
+        egui::Panel::bottom("status_bar")
+            .frame(
+                egui::Frame::new()
+                    .fill(theme::BG)
+                    .inner_margin(Margin::symmetric(16, 6)),
+            )
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(self.progress.describe()).small());
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.label(
+                            RichText::new("Fork: katakishi0 · SwitchRecomp by MZ Labs")
+                                .small()
+                                .color(theme::TEXT_WEAK),
+                        );
+                    });
+                });
+            });
+        if self.tab == 0 {
+            egui::Panel::left("form")
+                .resizable(false)
+                .exact_size(420.0)
+                .frame(
+                    egui::Frame::new()
+                        .fill(theme::PANEL)
+                        .inner_margin(Margin::same(18)),
+                )
+                .show(ui, |ui| {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        ui.add_enabled_ui(self.job.is_none(), |ui| self.new_project(ui, &ctx));
+                    });
+                });
+            egui::CentralPanel::default()
+                .frame(page_frame())
+                .show(ui, |ui| {
+                    self.run_card(ui);
+                    ui.add_space(14.0);
+                    self.log_view(ui);
+                });
+        } else {
+            egui::CentralPanel::default()
+                .frame(page_frame())
+                .show(ui, |ui| {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        ui.add_enabled_ui(self.job.is_none(), |ui| {
+                            if self.tab == 1 {
+                                self.projects(ui, &ctx);
+                            } else {
+                                self.about(ui);
+                            }
+                        });
+                    });
+                });
+        }
+        self.modals(&ctx);
+        if ctx.input(|i| !i.raw.hovered_files.is_empty()) {
+            egui::Area::new("drop_hint".into())
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(&ctx, |ui| {
+                    ui.label(
+                        RichText::new("Drop a game folder, XEX or ISO")
+                            .size(28.0)
+                            .color(theme::ACCENT),
+                    );
+                });
+        }
     }
 }
 
@@ -416,6 +555,355 @@ impl Drop for App {
             j.cancel();
         }
     }
+}
+
+impl App {
+    fn poll_background(&mut self, ctx: &egui::Context) {
+        if let Some(result) = self.tools_rx.as_ref().and_then(|r| r.try_recv().ok()) {
+            self.tools_rx = None;
+            match result {
+                Ok(v) => {
+                    self.show_setup = !v["desktop_ready"].as_bool().unwrap_or(false);
+                    self.tools = Some(v);
+                }
+                Err(e) => self.log.push(e),
+            }
+        }
+        if let Some(result) = self.update_rx.as_ref().and_then(|r| r.try_recv().ok()) {
+            self.update_rx = None;
+            match result {
+                Ok(v) => self.update = Some(v),
+                Err(e) => self.update_error = e,
+            }
+        }
+        if self.job.is_none() && self.check_after_job {
+            self.check_after_job = false;
+            self.tools_rx = Some(request_json(&self.settings.python, "toolchain", ctx));
+        }
+    }
+
+    fn export_apk(&mut self, ctx: &egui::Context, project: Option<String>) {
+        let mut args = vec![
+            "android".into(),
+            "--jobs".into(),
+            self.settings.jobs.max(2).to_string(),
+        ];
+        if let Some(root) = project {
+            args.extend(["--project".into(), root, "--runtime".into()]);
+        }
+        for (flag, value) in [
+            ("--android-sdk", &self.settings.android_sdk),
+            ("--ndk", &self.settings.android_ndk),
+            ("--sdk-source", &self.settings.android_runtime_source),
+        ] {
+            if !value.is_empty() {
+                args.extend([flag.into(), value.clone()]);
+            }
+        }
+        self.start(ctx, args);
+    }
+
+    fn run_card(&mut self, ui: &mut egui::Ui) {
+        let phase = self.progress.phase;
+        let color = match phase {
+            job::Phase::Failed => theme::ERROR,
+            job::Phase::Done => theme::SUCCESS,
+            _ => theme::BORDER,
+        };
+        card(ui, color, |ui| {
+            if let Some(j) = &mut self.job {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label(RichText::new(self.progress.describe()).strong().size(16.0));
+                    ui.label(format!("{}s", j.started.elapsed().as_secs()));
+                });
+                ui.add(
+                    egui::ProgressBar::new(self.progress.fraction())
+                        .desired_height(8.0)
+                        .fill(theme::ACCENT)
+                        .animate(true),
+                );
+                if ui.button("Cancel").clicked() {
+                    j.cancel();
+                }
+            } else if self.log.is_empty() {
+                ui.heading("Bring your Xbox 360 project to PC and Android");
+                ui.label("Choose your game on the left. Verify, prepare, recompile, then launch from Library.");
+                ui.label("ReXGlue supplies PowerPC translation and the guest runtime.");
+            } else {
+                ui.label(RichText::new(self.progress.describe()).strong().size(18.0));
+                if let Some(exe) = self.progress.exe.clone() {
+                    ui.label(exe.display().to_string());
+                    if ui.button("Show output folder").clicked()
+                        && let Some(p) = exe.parent()
+                    {
+                        open_path(p);
+                    }
+                }
+                if phase == job::Phase::Failed {
+                    ui.label(
+                        "Review the output below. Full compiler logs remain in the project folder.",
+                    );
+                }
+            }
+        });
+    }
+
+    fn log_view(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Output").strong());
+            ui.label(format!("{} lines", self.log.len()));
+            if ui.button("Copy").clicked() {
+                ui.ctx().copy_text(self.log.join("\n"));
+            }
+            if ui
+                .add_enabled(self.job.is_none(), egui::Button::new("Clear"))
+                .clicked()
+            {
+                self.log.clear();
+            }
+            if ui.button("Save...").clicked()
+                && let Some(p) = rfd::FileDialog::new()
+                    .set_file_name("xbo360.log")
+                    .save_file()
+            {
+                if let Err(e) = std::fs::write(p, self.log.join("\n")) {
+                    self.log.push(format!("Error: {e}"));
+                }
+            }
+        });
+        egui::Frame::new()
+            .fill(theme::LOG_BG)
+            .stroke(Stroke::new(1.0, theme::BORDER))
+            .corner_radius(10)
+            .inner_margin(Margin::symmetric(12, 10))
+            .show(ui, |ui| {
+                ui.set_min_size(ui.available_size());
+                let row = ui.text_style_height(&egui::TextStyle::Monospace);
+                egui::ScrollArea::both()
+                    .auto_shrink([false, false])
+                    .stick_to_bottom(true)
+                    .show_rows(ui, row, self.log.len(), |ui, range| {
+                        for line in &self.log[range] {
+                            let color = match job::classify(line) {
+                                job::LineKind::Error => theme::ERROR,
+                                job::LineKind::Warning => theme::WARNING,
+                                job::LineKind::Success => theme::SUCCESS,
+                                job::LineKind::Command => theme::ACCENT,
+                                _ => theme::TEXT_WEAK,
+                            };
+                            ui.add(
+                                egui::Label::new(RichText::new(line).monospace().color(color))
+                                    .wrap_mode(egui::TextWrapMode::Extend),
+                            );
+                        }
+                    });
+            });
+    }
+
+    fn about(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Xbox360Recomp 0.2.0");
+        ui.label("SwitchRecomp by MZ Labs — original interface foundation (Apache-2.0).");
+        ui.label("Xbox 360 fork additions: katakishi0 · hosting: kuaan08.");
+        ui.label("ReXGlue by Tom Clay and contributors, with Xenia and XenonRecomp research.");
+        ui.label("Android runtime: AlanConstantino, Andrew Nakas, Buku313 and their contributors.");
+        ui.hyperlink("https://github.com/kuaan08/xbo360");
+        section(ui, "How it works");
+        ui.label(
+            "Game XEX → PowerPC analysis → C++ → native host executable or Android library + APK.",
+        );
+        ui.label("An Android APK contains code for its selected title. An arbitrary new ISO needs its own recompilation.");
+        ui.label("Synthetic pipeline tests are separate from commercial-game compatibility.");
+    }
+
+    fn modals(&mut self, ctx: &egui::Context) {
+        if self.show_setup {
+            let mut open = true;
+            egui::Window::new("Install required build tools?").open(&mut open).collapsible(false).default_width(570.0).show(ctx, |ui| {
+                ui.label("The app can start official installers for missing prerequisites. Choose what to install; Windows may show installer and administrator dialogs.");
+                if let Some(tools) = &self.tools {
+                    let vs_ready = tools["visual_studio"].is_string();
+                    ui.label(format!("Visual Studio C++: {}", if vs_ready {"detected"} else {"missing"}));
+                    if let Some(list) = tools["tools"].as_array() { for t in list { ui.label(format!("{}: {}",t["name"].as_str().unwrap_or(""), t["version"].as_str().filter(|s|!s.is_empty()).unwrap_or("missing"))); } }
+                }
+                ui.add_enabled_ui(self.job.is_none(), |ui| {
+                    if cfg!(windows) {
+                        ui.horizontal_wrapped(|ui| { for (tool,label) in [("visual-studio","Visual Studio C++ + Clang"),("clang","LLVM/Clang"),("cmake","CMake"),("ninja","Ninja"),("java","Java 17"),("git","Git")] { if ui.button(format!("Install {label}")).clicked() { self.install_confirmation = Some(tool.into()); } } });
+                        if ui.button("Install Android SDK / NDK + Java tools").clicked() { self.install_confirmation = Some("android-tools".into()); }
+                    } else { ui.label("Linux: install Clang 20, CMake, Ninja, Git and JDK 17 using your system package manager."); }
+                    if ui.button("Check again").clicked() {self.tools_rx=Some(request_json(&self.settings.python,"toolchain",ctx));}
+                });
+                ui.label("You can close this window and install later from Settings.");
+            });
+            self.show_setup = open;
+        }
+        if let Some(tool) = self.install_confirmation.clone() {
+            egui::Window::new("Confirm installation").collapsible(false).show(ctx,|ui| {
+                ui.label(format!("Install {tool}? This downloads tools and starts their installers. Android tools require accepting the Android SDK/NDK license at developer.android.com/studio/terms."));
+                ui.horizontal(|ui| {
+                    if ui.button("Install").clicked() {
+                        self.install_confirmation=None;
+                        if tool == "android-tools" {self.start(ctx,vec!["setup-android".into(),"--yes".into()]);}
+                        else {self.start(ctx,vec!["install-tools".into(),tool,"--yes".into()]);}
+                    }
+                    if ui.button("Cancel").clicked() {self.install_confirmation=None;}
+                });
+            });
+        }
+        if self.show_settings {
+            let mut open = true;
+            egui::Window::new("Settings")
+                .open(&mut open)
+                .default_width(620.0)
+                .show(ctx, |ui| {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        self.settings_ui(ui, ctx);
+                        if ui.button("Install / detect prerequisites").clicked() {
+                            self.show_setup = true;
+                        }
+                        section(ui, "Android APK export");
+                        field(
+                            ui,
+                            "Android SDK (blank = detected/cache)",
+                            &mut self.settings.android_sdk,
+                            true,
+                            false,
+                        );
+                        field(
+                            ui,
+                            "Android NDK r27c (blank = detected/cache)",
+                            &mut self.settings.android_ndk,
+                            true,
+                            false,
+                        );
+                        field(
+                            ui,
+                            "Android ReXGlue source (optional)",
+                            &mut self.settings.android_runtime_source,
+                            true,
+                            false,
+                        );
+                        if ui.button("Build Android menu APK").clicked() {
+                            self.export_apk(ctx, None);
+                        }
+                    });
+                });
+            self.show_settings = open;
+        }
+        if self.update.is_some() || !self.update_error.is_empty() {
+            let mut open = true;
+            let info = self.update.clone();
+            egui::Window::new("Updates").open(&mut open).show(ctx, |ui| {
+                if let Some(v) = &info {
+                    ui.label(if v["current"]==true {"You have the current version."} else {"A newer version is available."});
+                    ui.label(v["version"].as_str().unwrap_or(""));
+                    if let Some(url)=v["url"].as_str() {ui.hyperlink(url);}
+                    if ui.add_enabled(v["current"]!=true && self.job.is_none(),egui::Button::new("Download verified update")).clicked() {self.start(ctx,vec!["update".into(),"--download".into()]);}
+                    ui.label("The download is SHA-256 checked. Extract it and replace the portable app after closing it; settings are retained.");
+                } else {ui.label(&self.update_error);}
+            });
+            if !open {
+                self.update = None;
+                self.update_error.clear();
+            }
+        }
+        if let Some(root) = self.edit_project.clone() {
+            let mut open = true;
+            egui::Window::new("Game settings")
+                .open(&mut open)
+                .show(ctx, |ui| {
+                    let path = Path::new(&root).join("launch-settings.json");
+                    let id = egui::Id::new(format!("launch_{root}"));
+                    let mut value =
+                        ctx.data_mut(|d| d.get_temp::<String>(id))
+                            .unwrap_or_else(|| {
+                                std::fs::read_to_string(&path).unwrap_or_else(|_| {
+                                    "{\n  \"renderer\": \"any\",\n  \"fullscreen\": false\n}".into()
+                                })
+                            });
+                    ui.label("Per-game launch settings: renderer (any/d3d12/vulkan), fullscreen.");
+                    ui.add(
+                        egui::TextEdit::multiline(&mut value)
+                            .code_editor()
+                            .desired_width(500.0),
+                    );
+                    ctx.data_mut(|d| d.insert_temp(id, value.clone()));
+                    if ui.button("Save").clicked() {
+                        match serde_json::from_str::<serde_json::Value>(&value) {
+                            Ok(_) => {
+                                if let Err(e) = std::fs::write(path, &value) {
+                                    self.log.push(e.to_string());
+                                } else {
+                                    self.edit_project = None;
+                                }
+                            }
+                            Err(e) => {
+                                ui.colored_label(theme::ERROR, e.to_string());
+                            }
+                        }
+                    }
+                });
+            if !open {
+                self.edit_project = None;
+            }
+        }
+    }
+}
+
+fn request_json(
+    python: &str,
+    command: &str,
+    ctx: &egui::Context,
+) -> Receiver<Result<serde_json::Value, String>> {
+    let (tx, rx) = mpsc::channel();
+    let python = python.to_string();
+    let command = command.to_string();
+    let ctx = ctx.clone();
+    std::thread::spawn(move || {
+        let mut c = std::process::Command::new(python);
+        c.arg(toolchain::home().join("xbo360.py")).arg(command);
+        toolchain::hide_console(&mut c);
+        let result = c.output().map_err(|e| e.to_string()).and_then(|o| {
+            if !o.status.success() {
+                return Err(String::from_utf8_lossy(&o.stderr).to_string());
+            }
+            serde_json::from_slice(&o.stdout).map_err(|e| e.to_string())
+        });
+        let _ = tx.send(result);
+        ctx.request_repaint();
+    });
+    rx
+}
+
+fn page_frame() -> egui::Frame {
+    egui::Frame::new()
+        .fill(theme::BG)
+        .inner_margin(Margin::same(18))
+}
+fn card(ui: &mut egui::Ui, border: Color32, add: impl FnOnce(&mut egui::Ui)) {
+    egui::Frame::new()
+        .fill(theme::CARD)
+        .stroke(Stroke::new(1.0, border))
+        .corner_radius(12)
+        .inner_margin(Margin::same(16))
+        .show(ui, add);
+}
+fn section(ui: &mut egui::Ui, label: &str) {
+    ui.add_space(14.0);
+    ui.label(RichText::new(label).strong().color(theme::TEXT));
+    ui.add_space(4.0);
+}
+fn logo(ui: &mut egui::Ui, size: f32) {
+    let (r, _) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+    ui.painter().rect_filled(r, 6, theme::ACCENT);
+    let c = r.center();
+    let v = vec![
+        c + egui::vec2(-3.0, -6.0),
+        c + egui::vec2(6.0, 0.0),
+        c + egui::vec2(-3.0, 6.0),
+    ];
+    ui.painter()
+        .add(egui::Shape::convex_polygon(v, Color32::WHITE, Stroke::NONE));
 }
 
 fn field(ui: &mut egui::Ui, label: &str, value: &mut String, folder: bool, xex: bool) {
@@ -430,9 +918,7 @@ fn field(ui: &mut egui::Ui, label: &str, value: &mut String, folder: bool, xex: 
             let selected = if folder {
                 dialog.pick_folder()
             } else if xex {
-                dialog
-                    .add_filter("Xbox 360 executable", &["xex"])
-                    .pick_file()
+                dialog.add_filter("Game input", &["xex"]).pick_file()
             } else {
                 dialog.pick_file()
             };
@@ -457,7 +943,7 @@ fn main() -> eframe::Result {
         viewport: egui::ViewportBuilder::default()
             .with_title("Xbox 360 Recomp")
             .with_inner_size([1060.0, 800.0])
-            .with_min_inner_size([800.0, 640.0])
+            .with_min_inner_size([1000.0, 640.0])
             .with_icon(theme::app_icon()),
         ..Default::default()
     };

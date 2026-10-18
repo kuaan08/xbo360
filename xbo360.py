@@ -21,7 +21,7 @@ import tomllib
 import urllib.request
 import zipfile
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 SDK_VERSION = "0.10.0"
 SDK_COMMIT = "f5337cdc947ff6d4c4196737e2c807a48f2a1fc2"
 SDK_HASHES = {
@@ -149,6 +149,10 @@ def project_name(value: str) -> str:
 
 
 def run(args: list[str], cwd: Path, log: Path, env: dict | None = None) -> None:
+    if env and not Path(args[0]).is_absolute():
+        resolved = shutil.which(args[0], path=env.get("PATH"))
+        if resolved:
+            args = [resolved, *args[1:]]
     print("> " + subprocess.list2cmdline(args), flush=True)
     with log.open("a", encoding="utf-8") as output:
         output.write("> " + subprocess.list2cmdline(args) + "\n")
@@ -298,12 +302,13 @@ def build(root: Path, sdk: Path | None = None, jobs: int = 0,
     state = load_project(root)
     sdk = (sdk or Path(state["sdk"])).resolve()
     check_sdk(sdk)
-    if not shutil.which("cmake") or not shutil.which("ninja"):
+    import prerequisites
+    env = prerequisites.build_environment()
+    if not shutil.which("cmake", path=env.get("PATH")) or not shutil.which("ninja", path=env.get("PATH")):
         raise RecompError("CMake 3.25+ and Ninja must be on PATH. Windows also requires Visual Studio C++ and Clang 20+.")
     # Run explicit codegen before configure so generated source lists exist.
     state = codegen(root, sdk)
     preset = host_platform() + "-" + configuration.lower()
-    env = os.environ.copy()
     env["PATH"] = str(sdk / "bin") + os.pathsep + env.get("PATH", "")
     state.update(status="building", executable=None)
     write_json(root / PROJECT_FILE, state)
@@ -329,9 +334,15 @@ def build(root: Path, sdk: Path | None = None, jobs: int = 0,
     return state
 
 
-def launch(root: Path, renderer: str = "any", fullscreen: bool = False) -> int:
+def launch(root: Path, renderer: str | None = None, fullscreen: bool | None = None) -> int:
     root = root.resolve()
     state = load_project(root)
+    settings_file = root / "launch-settings.json"
+    settings = json.loads(settings_file.read_text()) if settings_file.is_file() else {}
+    renderer = renderer or settings.get("renderer", "any")
+    fullscreen = fullscreen if fullscreen is not None else settings.get("fullscreen", False)
+    if renderer not in ("any", "d3d12", "vulkan") or not isinstance(fullscreen, bool):
+        raise RecompError("Invalid per-game renderer/fullscreen setting")
     if state.get("status") != "built" or not state.get("executable"):
         raise RecompError("This project has no successfully built executable.")
     exe = Path(state["executable"])
@@ -374,6 +385,23 @@ def main(argv=None) -> int:
     inspect.add_argument("input", type=Path)
     doc = commands.add_parser("doctor", help="Check SDK and native toolchain")
     doc.add_argument("--sdk", type=Path)
+    tools_cmd = commands.add_parser("toolchain", help="Detect build prerequisites as JSON")
+    installer = commands.add_parser("install-tools", help="Open an official prerequisite installer")
+    installer.add_argument("tool", choices=["visual-studio", "clang", "cmake", "ninja", "java", "git"])
+    installer.add_argument("--yes", action="store_true", required=True,
+                           help="Confirm installation was requested by the user")
+    update = commands.add_parser("update", help="Check releases and optionally download a verified update")
+    update.add_argument("--download", action="store_true")
+    update.add_argument("--directory", type=Path)
+    android = commands.add_parser("android", help="Export an Android launcher or per-title native APK")
+    android.add_argument("--project", type=Path)
+    android.add_argument("--sdk-source", type=Path)
+    android.add_argument("--ndk", type=Path)
+    android.add_argument("--android-sdk", type=Path)
+    android.add_argument("--jobs", type=int, default=2)
+    android.add_argument("--runtime", action="store_true")
+    setup_android = commands.add_parser("setup-android", help="Install pinned Android tools after explicit consent")
+    setup_android.add_argument("--yes", action="store_true", required=True)
     prepare_cmd = commands.add_parser("prepare", help="Initialize a project without codegen")
     compile_cmd = commands.add_parser("recompile", help="Prepare, translate, and build")
     for p in (prepare_cmd, compile_cmd):
@@ -393,20 +421,63 @@ def main(argv=None) -> int:
     compile_cmd.add_argument("--jobs", type=int, default=0)
     play = commands.add_parser("run")
     play.add_argument("project", type=Path)
-    play.add_argument("--renderer", choices=["any", "d3d12", "vulkan"], default="any")
-    play.add_argument("--fullscreen", action="store_true")
+    play.add_argument("--renderer", choices=["any", "d3d12", "vulkan"])
+    play.add_argument("--fullscreen", action="store_true", default=None)
     args = parser.parse_args(argv)
     try:
         sdk = getattr(args, "sdk", None)
-        if args.command == "install-sdk":
+        if args.command == "setup-android":
+            if os.name != "nt":
+                raise RecompError("Automatic Android tool setup currently supports Windows. Use sdkmanager on Linux.")
+            import android_tools
+            print("Installing Android tools with verified downloads...", flush=True)
+            print("SDK: " + str(android_tools.ensure_sdk()), flush=True)
+            print("JDK: " + str(android_tools.ensure_jdk()), flush=True)
+        elif args.command == "toolchain":
+            import prerequisites
+            print(json.dumps(prerequisites.report()))
+        elif args.command == "install-tools":
+            import prerequisites
+            prerequisites.install(args.tool)
+        elif args.command == "update":
+            import updates
+            info = updates.release(VERSION, host_platform())
+            print(json.dumps(info), flush=True)
+            if args.download and not info["current"]:
+                target = updates.download(info, args.directory or cache_root() / "updates" / info["version"])
+                print(f"Update downloaded and verified: {target}", flush=True)
+        elif args.command == "android":
+            import android_build
+            android_build.export(args.project, args.sdk_source, args.ndk, args.android_sdk,
+                                 args.runtime, args.jobs)
+        elif args.command == "install-sdk":
             install_sdk(sdk)
         elif args.command == "inspect":
-            print(json.dumps(inspect_xex(args.input), indent=2))
+            if args.input.suffix.lower() in (".iso", ".xiso"):
+                from iso_import import inspect_iso
+                print(json.dumps(inspect_iso(args.input), indent=2))
+            elif args.input.is_dir():
+                from iso_import import find_xex
+                print(json.dumps(inspect_xex(find_xex(args.input)), indent=2))
+            else:
+                print(json.dumps(inspect_xex(args.input), indent=2))
         elif args.command == "doctor":
             return 0 if doctor(sdk or sdk_default()) else 1
         elif args.command in ("prepare", "recompile"):
             sdk = (sdk or sdk_default()).resolve()
-            prepare(args.input, args.project, args.name, sdk, args.game_root, not args.no_scan_dll)
+            source = args.input
+            game_root = args.game_root
+            if source.suffix.lower() in (".iso", ".xiso"):
+                from iso_import import extract_iso, find_xex
+                # Keep original assets separate from generated project files.
+                game_root = args.project.resolve().with_name(args.project.name + "_assets")
+                extract_iso(source, game_root)
+                source = find_xex(game_root)
+            elif source.is_dir():
+                from iso_import import find_xex
+                game_root = source
+                source = find_xex(source)
+            prepare(source, args.project, args.name, sdk, game_root, not args.no_scan_dll)
             if args.command == "recompile":
                 if args.generate_only:
                     codegen(args.project, sdk)
@@ -421,7 +492,7 @@ def main(argv=None) -> int:
             build(args.project, sdk, args.jobs, args.configuration)
         elif args.command == "run":
             return launch(args.project, args.renderer, args.fullscreen)
-    except (RecompError, OSError, ValueError, KeyError, zipfile.BadZipFile) as exc:
+    except (RecompError, RuntimeError, OSError, ValueError, KeyError, zipfile.BadZipFile) as exc:
         print(f"Error: {exc}", file=sys.stderr, flush=True)
         return 1
     return 0

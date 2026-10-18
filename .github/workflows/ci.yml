@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: xbo360-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     strategy:
@@ -59,3 +63,73 @@ jobs:
           path: dist/Xbox360Recomp-Windows-x64.zip
           retention-days: 14
           if-no-files-found: error
+
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Android build tools
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/Xbox360Recomp/android
+          key: android-rp6-8dd8b369-clang20-ndk27c-v1
+      - name: Build and verify library APK
+        run: python xbo360.py android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Xbox360Recomp-Android
+          path: dist/android-launcher/Xbox360Recomp-Android.apk
+          if-no-files-found: error
+      - name: Host compiler and runtime build dependencies
+        run: |
+          wget -q https://apt.llvm.org/llvm.sh -O /tmp/llvm-xbo.sh
+          sudo bash /tmp/llvm-xbo.sh 20
+          sudo apt-get install -y clang-20 lld-20 libgtk-3-dev libvulkan-dev ninja-build libx11-dev libxkbcommon-dev libwayland-dev libpulse-dev libasound2-dev
+      - name: Prepare original test executable
+        run: |
+          python xbo360.py install-sdk --sdk sdk
+          python ci/make_test_xex.py dist/synthetic-game/Default.xex
+          python xbo360.py prepare dist/synthetic-game/Default.xex --project dist/android-fixture --name fixture --sdk sdk
+      - name: Compile synthetic title for Android ARM64 and export signed APK
+        run: python xbo360.py android --project dist/android-fixture --runtime --jobs 3
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Android-native-validation
+          path: |
+            dist/android-fixture/android-export/*.apk
+            dist/android-fixture/android-export/*.log
+          if-no-files-found: warn
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [check, android]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Xbox360Recomp-Windows-x64
+          path: release
+      - uses: actions/download-artifact@v4
+        with:
+          name: Xbox360Recomp-Android
+          path: release
+      - name: Publish versioned update packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view v0.2.0 >/dev/null 2>&1 || gh release create v0.2.0 --target "$GITHUB_SHA" --title 'Xbox 360 Recomp 0.2.0' --notes-file CHANGELOG.md
+          gh release upload v0.2.0 release/* --clobber
