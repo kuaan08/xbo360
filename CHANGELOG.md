@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.9
+
+- Fix frontend layout regression where the Recompile sidebar expanded over the build/codegen logs over time, leaving the user unable to read output.
+- Move the full compilation console to a **separate Output tab**: it appears and opens automatically as soon as any command starts, including **Library → Generate C++ / Build / Export APK**. After completion, output remains readable until the user clears it; **Copy** and **Save...** remain available.
+- Remove the log console from the Recompile split view while idle so it cannot be obscured by the form. Keep a clear **Open output** shortcut after a task has run.
+- Allow manual drag-resizing of the Recompile form with a defined **300–430 px range** and a 370 px initial width. Prevent the Browse text fields from silently pushing the sidebar wider than the chosen value.
+- Remove the log frame's dynamically growing minimum width, preserving a contained independently scrollable full-width console. No change to generated code, compilation flags, project manifests or saved logs.
+
 ## 0.3.8
 
 - Fix **Android ARM64 per-game APK export on Windows** failing during matching host-codegen CMake configuration with `CMake was unable to find a build program corresponding to "Ninja"` / `CMAKE_MAKE_PROGRAM is not set`.
