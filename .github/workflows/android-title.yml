@@ -60,19 +60,40 @@ jobs:
           ISO_URL: ${{ inputs.iso_url }}
         run: |
           mkdir -p dist
-          curl --fail --location --silent --show-error \
+          set +e
+          http_code="$(curl --location --silent --show-error \
             --proto '=https' --proto-redir '=https' \
             --connect-timeout 30 --retry 2 --max-filesize 25000000000 \
-            --output dist/input.iso "$ISO_URL"
+            --output dist/input.iso --write-out '%{http_code}' "$ISO_URL")"
+          curl_status=$?
+          set -e
+          if [ "$curl_status" -ne 0 ] || [ "$http_code" != "200" ]; then
+            rm -f dist/input.iso
+            if [ "$http_code" = "403" ]; then
+              echo "::error::The server returned HTTP 403. This URL is not accessible to GitHub Actions; it may be a webpage rather than a direct file download. Use a direct HTTPS link to a game image you are authorized to use. This workflow does not bypass server access controls."
+            elif [ "$http_code" = "404" ]; then
+              echo "::error::The server returned HTTP 404. Check that the direct download URL still exists."
+            elif [ "$curl_status" -eq 63 ]; then
+              echo "::error::The download exceeded the 25 GB limit."
+            else
+              echo "::error::The ISO download failed (curl exit $curl_status, HTTP $http_code). Check the direct HTTPS URL and whether the host permits automated downloads."
+            fi
+            exit 1
+          fi
           python - <<'PY'
           from pathlib import Path
           p = Path("dist/input.iso")
           size = p.stat().st_size
           if size < 1024 * 1024:
-              raise SystemExit(f"Downloaded file is too small to be a game ISO ({size} bytes).")
+              raise SystemExit(f"Downloaded file is too small to be a game ISO ({size} bytes). The URL may point to an HTML page.")
           if size > 25_000_000_000:
               raise SystemExit("ISO exceeds the 25 GB safety limit.")
-          print(f"Downloaded ISO size: {size:,} bytes")
+          with p.open("rb") as f:
+              head = f.read(4096).lstrip().lower()
+          if head.startswith((b"<!doctype html", b"<html", b"<?xml")):
+              p.unlink(missing_ok=True)
+              raise SystemExit("The server returned a web page instead of an ISO. Enter a direct download URL, not a page URL.")
+          print(f"Downloaded file size: {size:,} bytes; XDVDFS validation follows in the next step.")
           PY
 
       - name: Verify optional ISO SHA-256
